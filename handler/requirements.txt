@@ -1,0 +1,2 @@
+slack-sdk>=3.33.0
+supabase>=2.8.0

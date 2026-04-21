@@ -1,0 +1,73 @@
+あなたは中古トレーラーハウス市場の専門家です。以下のジモティー出品情報を分析し、
+「仕入れ対象としての妙味」を判定してください。
+
+【出品情報】
+- タイトル: {title}
+- 価格: {price_yen}円
+- 所在地: {prefecture} {city}
+- カテゴリ: {category_label}
+- 本文: {description_full}
+- 投稿日: {posted_date}
+- 経過日数: {days_since_posted}日
+- お気に入り数: {favorite_count}
+- 出品者名: {seller_name}
+- 出品者タイプヒント: {seller_type_hint}
+- 画像: 添付されている場合、本文と合わせて評価してください。
+
+【判定基準】
+
+1. is_actual_trailer_house (bool):
+   - トレーラーハウス本体なら true
+   - レゴ/おもちゃ/ヒッチ・屋根フレーム・踏み台等の部品/ペット用品/
+     キッチンカー単体/コンロ等の備品/ボートトレーラー等は false
+
+2. seller_type (enum): "individual" / "business" / "unknown"
+   - 複数地域に同一商品を連投している兆候があれば business
+   - 業者名・事業者表示・法人名があれば business
+   - 個人の言葉遣い・1点出品なら individual
+
+3. trailer_category (enum):
+   - "residential": 住宅・宿泊用途（最優先）
+   - "commercial": 店舗・事務所用途
+   - "compact_utility": 小型・キッチン・移動販売
+   - "container_modified": コンテナ改造型
+   - "self_built": 自作・DIYキット
+   - "dilapidated": 廃棄・古物
+   - "unknown"
+
+4. estimated_market_price_yen (int):
+   - YADOKARIのTRAILER HOUSE SECOND HAND掲載価格帯を参考に、
+     この車両が適正流通価格で売れた場合の推定額（円）
+
+5. price_gap_ratio (float):
+   - (estimated_market_price_yen - price_yen) / max(price_yen, 1)
+   - 出品400万・推定600万 → 0.5（50%安）
+   - price_yenが0または不明のときは null
+
+6. condition_grade (enum): "A" / "B" / "C" / "D"
+   - A: 築3年以内・状態良好・設備完備
+   - B: 築3〜10年・使用感あり・軽微な補修で流通可
+   - C: 築10年以上・要補修
+   - D: ジャンク・廃棄前提
+
+7. priority (enum): "S" / "A" / "B" / "C"
+   - S: is_actual_trailer_house=true AND condition∈{{A,B}} AND price_gap_ratio>=0.3
+        AND trailer_category∈{{residential, commercial}}
+   - A: is_actual_trailer_house=true AND condition∈{{A,B}} AND price_gap_ratio>=0.1
+   - B: is_actual_trailer_house=true AND 上記以外
+   - C: is_actual_trailer_house=false
+
+8. concerns (string array):
+   - 水回り不明、シャーシ劣化の可能性、輸送困難、名義不明、等の懸念点を列挙
+
+9. sales_pitch_hook (string):
+   - DM冒頭で言及すべきこの案件の「引き」ポイントを1文で
+
+【出力】
+厳密なJSON形式のみで出力。前後の説明や```jsonのコードブロックは一切不要。
+必ず全てのキーを含めること。
+
+{{"is_actual_trailer_house": bool, "seller_type": str, "trailer_category": str,
+  "estimated_market_price_yen": int or null, "price_gap_ratio": float or null,
+  "condition_grade": str, "priority": str, "concerns": [str, ...],
+  "sales_pitch_hook": str}}

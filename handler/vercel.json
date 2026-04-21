@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/slack_interactive.py", "use": "@vercel/python" }
+  ],
+  "routes": [
+    { "src": "/api/slack/interactive", "dest": "api/slack_interactive.py" },
+    { "src": "/api/slack", "dest": "api/slack_interactive.py" }
+  ]
+}

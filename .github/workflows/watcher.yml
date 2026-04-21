@@ -1,0 +1,42 @@
+name: Second Hand Watcher
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # 毎時0分
+  workflow_dispatch:
+
+concurrency:
+  group: watcher
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync --no-dev
+
+      - name: Run watcher
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+          WATCHER_CLASSIFIER_MODEL: ${{ vars.WATCHER_CLASSIFIER_MODEL }}
+          WATCHER_DM_MODEL: ${{ vars.WATCHER_DM_MODEL }}
+          WATCHER_SEARCH_KEYWORDS: ${{ vars.WATCHER_SEARCH_KEYWORDS }}
+          WATCHER_MAX_DETAILS_PER_RUN: ${{ vars.WATCHER_MAX_DETAILS_PER_RUN }}
+          WATCHER_REQUEST_DELAY_SECONDS: ${{ vars.WATCHER_REQUEST_DELAY_SECONDS }}
+          YADOKARI_INQUIRY_URL: ${{ vars.YADOKARI_INQUIRY_URL }}
+        run: uv run python -m watcher.main
