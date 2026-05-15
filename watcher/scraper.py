@@ -242,34 +242,48 @@ class JmtyScraper:
     def _parse_detail_html(self, listing: Listing, html: str) -> Listing:
         tree = HTMLParser(html)
 
+        # 詳細ページには「その他のお勧め」「関連の表示板」などで他出品が大量に並ぶ。
+        # 同じ cdn.jmty.jp のサムネが混ざるため、まずメインの記事コンテナに絞る。
+        main = _find_main_article_node(tree)
+
         desc_node = (
-            tree.css_first("[class*=description]")
-            or tree.css_first(".p-articles-show__description")
-            or tree.css_first("#js-article-description")
+            main.css_first("[class*=description]")
+            or main.css_first(".p-articles-show__description")
+            or main.css_first("#js-article-description")
         )
         if desc_node:
             listing.description_full = desc_node.text(strip=True)[:8000]
 
-        image_urls = _collect_listing_images(tree, max_images=5)
+        image_urls = _collect_listing_images(main, max_images=5)
         if image_urls:
             listing.image_urls = image_urls
             if not listing.thumbnail_url:
                 listing.thumbnail_url = image_urls[0]
 
         for sel in ("[class*=user-name]", "[class*=seller]", "[class*=profile]"):
-            node = tree.css_first(sel)
+            node = main.css_first(sel)
             if node and node.text(strip=True):
                 listing.seller_name = node.text(strip=True)[:80]
                 break
 
-        text_all = tree.body.text(strip=True) if tree.body else ""
+        text_all = main.text(strip=True) or ""
         if "事業者" in text_all or "法人" in text_all:
             listing.seller_type_hint = "business"
         elif "個人" in text_all:
             listing.seller_type_hint = "individual"
 
-        listing.posted_date = self._parse_date(tree, ("投稿日", "登録日")) or listing.posted_date
-        listing.last_updated_date = self._parse_date(tree, ("更新日",)) or listing.last_updated_date
+        # 出品者の累計出品数。「投稿N件」「出品N件」のどちらかの表記。
+        m = re.search(r"(?:投稿|出品)\s*(\d+)\s*件", text_all)
+        if m:
+            try:
+                listing.seller_post_count = int(m.group(1))
+            except ValueError:
+                pass
+
+        listing.posted_date = _parse_date_in(text_all, ("投稿日", "登録日")) or listing.posted_date
+        listing.last_updated_date = (
+            _parse_date_in(text_all, ("更新日",)) or listing.last_updated_date
+        )
 
         # View count: heuristic — label like 「閲覧数」。
         m = re.search(r"閲覧\s*[:：]?\s*(\d[\d,]*)", text_all)
@@ -285,33 +299,77 @@ class JmtyScraper:
             if m:
                 listing.favorite_count = int(m.group(1))
 
+        # 詳細ページに「ジャンル: その他/パーツ/家具/家電/おもちゃ」表示があれば、
+        # 一覧で取れなかった場合のフォールバックに使う。
+        # 隣接フィールドとテキストが連結するためホワイトリストで照合。
+        if not listing.category_label:
+            m = re.search(
+                r"ジャンル\s*[:：]?\s*"
+                r"(その他|パーツ|家具|家電|おもちゃ|スポーツ|楽器|本|"
+                r"自転車|バイク|車|不動産|ペット用品|キッチン用品|工具)",
+                text_all,
+            )
+            if m:
+                listing.category_label = m.group(1)
+
         return listing
 
     @staticmethod
     def _parse_date(tree: HTMLParser, labels: tuple[str, ...]) -> date | None:
         text = tree.body.text() if tree.body else ""
-        for label in labels:
-            idx = text.find(label)
-            if idx == -1:
-                continue
-            window = text[idx : idx + 40]
-            m = DATE_TEXT_RE.search(window)
-            if m:
-                y, mo, d = m.group(1), m.group(2), m.group(3) or "1"
-                try:
-                    return date(int(y), int(mo), int(d))
-                except ValueError:
-                    pass
-            m2 = JP_SHORT_DATE_RE.search(window)
-            if m2:
-                mo, d = int(m2.group(1)), int(m2.group(2))
-                today = datetime.now().date()
-                year = today.year if mo <= today.month else today.year - 1
-                try:
-                    return date(year, mo, d)
-                except ValueError:
-                    pass
-        return None
+        return _parse_date_in(text, labels)
+
+
+# 詳細ページの「メイン記事領域」を特定するためのセレクタ。
+# Jimoty のHTMLは静的ファイルとして確認できていないので、候補を上から順に試す。
+# 関連広告（aside / .p-related-* / .recommend / .other-articles 等）は除外したい。
+_MAIN_ARTICLE_SELECTORS = (
+    "article.p-articles-show",
+    "[class*=p-articles-show]",
+    "[id*=js-article]",
+    "main article",
+    "article",
+    "main",
+)
+
+
+def _find_main_article_node(tree: HTMLParser):
+    """メイン記事ノードを特定。見つからなければ body 全体を返す。"""
+    for sel in _MAIN_ARTICLE_SELECTORS:
+        node = tree.css_first(sel)
+        if node is None:
+            continue
+        # 関連広告セクションそのものを誤って掴むケースを弾く
+        cls = (node.attributes.get("class") or "").lower()
+        if any(token in cls for token in ("related", "recommend", "other", "ads")):
+            continue
+        return node
+    return tree.body if tree.body else tree
+
+
+def _parse_date_in(text: str, labels: tuple[str, ...]) -> date | None:
+    for label in labels:
+        idx = text.find(label)
+        if idx == -1:
+            continue
+        window = text[idx : idx + 40]
+        m = DATE_TEXT_RE.search(window)
+        if m:
+            y, mo, d = m.group(1), m.group(2), m.group(3) or "1"
+            try:
+                return date(int(y), int(mo), int(d))
+            except ValueError:
+                pass
+        m2 = JP_SHORT_DATE_RE.search(window)
+        if m2:
+            mo, d = int(m2.group(1)), int(m2.group(2))
+            today = datetime.now().date()
+            year = today.year if mo <= today.month else today.year - 1
+            try:
+                return date(year, mo, d)
+            except ValueError:
+                pass
+    return None
 
 
 # 画像セレクタヘルパ。共有アバター・no_image プレースホルダ・SVG等は弾く。
@@ -339,10 +397,15 @@ def _is_useful_image_url(src: str) -> bool:
     return True
 
 
-def _collect_listing_images(tree: HTMLParser, max_images: int = 5) -> list[str]:
+def _collect_listing_images(root, max_images: int = 5) -> list[str]:
+    """root の配下に限定して画像を収集する。
+
+    詳細ページ全体に対して呼ぶと「その他のお勧め」の他出品サムネを拾ってしまうので、
+    必ずメイン記事ノードに絞ってから呼び出すこと。
+    """
     seen: set[str] = set()
     out: list[str] = []
-    for img in tree.css("img"):
+    for img in root.css("img"):
         src = (
             img.attributes.get("data-src")
             or img.attributes.get("data-original")

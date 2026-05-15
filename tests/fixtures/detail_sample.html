@@ -5,7 +5,9 @@
   <title>【築3年・超美品】6mトレーラーハウス - ジモティー</title>
 </head>
 <body>
-  <article>
+  <header>サイトナビ</header>
+  <main>
+  <article class="p-articles-show">
     <h1>【築3年・超美品】6mトレーラーハウス／民泊・サロン・事務所に最適</h1>
 
     <div class="p-articles-show__images">
@@ -26,6 +28,7 @@
 
     <div class="p-articles-show__meta">
       <dl>
+        <dt>ジャンル</dt><dd>その他</dd>
         <dt>投稿日</dt><dd>2026/04/07</dd>
         <dt>更新日</dt><dd>2026年4月8日</dd>
         <dt>閲覧</dt><dd>3,210</dd>
@@ -36,23 +39,37 @@
     <div class="p-user-profile">
       <span class="p-user-name">沖縄太郎</span>
       <span>個人出品</span>
+      <span class="p-user-post-count">投稿1件</span>
     </div>
   </article>
+  </main>
 
   <!-- 関連広告セクション。本体パーサに混ざってはならない -->
-  <aside class="p-related-ads">
-    <div class="ad-item">
-      <img src="https://example.com/airpods.jpg" alt="AirPods">
-      <span>AirPods Pro 14,000円</span>
-    </div>
-    <div class="ad-item">
-      <img src="https://img.cdn.jmty.jp/avatar/user_avatar_123.png" alt="avatar">
-      <span>ペット用品 1,300円</span>
-    </div>
-    <div class="ad-item">
-      <img src="https://example.com/toy.jpg" alt="おもちゃ">
-      <span>ガチャ 1,800円</span>
-    </div>
+  <!-- 実ジモティの「その他のお勧め」「関連の表示板」は、同じ cdn.jmty.jp 上の他出品サムネを含む。
+       URLドメインでは弾けないので、メイン記事コンテナの外側に配置されているかで判定する必要がある。 -->
+  <aside class="p-related-ads other-articles">
+    <h3>その他のお勧め</h3>
+    <article class="p-related-item">
+      <img src="https://img.cdn.jmty.jp/image/article-airpods-1.jpg" alt="AirPods Pro">
+      <p class="p-related-item-description">AirPods Pro 14,000円 美品です</p>
+      <span>事業者出品</span>
+    </article>
+    <article class="p-related-item">
+      <img src="https://img.cdn.jmty.jp/image/article-pet-1.jpg" alt="ペット用品">
+      <p class="p-related-item-description">ペット用品 1,300円</p>
+    </article>
+    <article class="p-related-item">
+      <img src="https://img.cdn.jmty.jp/image/article-toy-1.jpg" alt="ガチャ">
+      <p class="p-related-item-description">ガチャ 1,800円</p>
+    </article>
+  </aside>
+
+  <aside class="p-recommend">
+    <h3>関連の表示板</h3>
+    <article class="p-related-item">
+      <img src="https://img.cdn.jmty.jp/image/article-bike-1.jpg" alt="自転車">
+      <span>法人出品</span>
+    </article>
   </aside>
 </body>
 </html>

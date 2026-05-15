@@ -61,6 +61,9 @@ class Classifier:
             favorite_count=listing.favorite_count if listing.favorite_count is not None else 0,
             seller_name=listing.seller_name or "",
             seller_type_hint=listing.seller_type_hint or "",
+            seller_post_count=(
+                listing.seller_post_count if listing.seller_post_count is not None else "不明"
+            ),
         )
 
         image_blocks = fetch_image_blocks(listing.image_urls or [], max_images=3)

@@ -107,6 +107,7 @@ def test_parse_detail_fills_description_and_dates() -> None:
     assert target.view_count == 3210
     assert target.seller_type_hint == "individual"
     assert target.seller_name and "沖縄太郎" in target.seller_name
+    assert target.seller_post_count == 1
 
 
 def test_parse_detail_image_filtering_excludes_ads_and_avatars() -> None:
@@ -142,6 +143,62 @@ def test_is_useful_image_url() -> None:
     assert not _is_useful_image_url("https://img.cdn.jmty.jp/avatar/u.png")
     assert not _is_useful_image_url("https://img.cdn.jmty.jp/no_image.jpg")
     assert not _is_useful_image_url("data:image/svg+xml,...")
+
+
+def test_parse_detail_fills_category_when_missing() -> None:
+    """一覧でカテゴリが取れなかった場合、詳細の『ジャンル: ...』からフォールバックする。"""
+    detail_html = (FIXTURES / "detail_sample.html").read_text(encoding="utf-8")
+    target = Listing(
+        article_id="article-1o9e6w",
+        url="",
+        title="",
+        price_yen=None,
+        prefecture=None,
+        city=None,
+        category_label=None,  # ← 一覧で取れていない状態
+        thumbnail_url=None,
+    )
+    s = _scraper()
+    try:
+        s._parse_detail_html(target, detail_html)
+    finally:
+        s.close()
+    assert target.category_label == "その他"
+
+
+def test_parse_detail_ignores_related_ads_with_jmty_cdn_thumbs() -> None:
+    """関連広告セクション内の cdn.jmty.jp 画像/テキストを本体に混入させない。"""
+    detail_html = (FIXTURES / "detail_sample.html").read_text(encoding="utf-8")
+    target = Listing(
+        article_id="article-1o9e6w",
+        url="",
+        title="",
+        price_yen=None,
+        prefecture=None,
+        city=None,
+        category_label=None,
+        thumbnail_url=None,
+    )
+    s = _scraper()
+    try:
+        s._parse_detail_html(target, detail_html)
+    finally:
+        s.close()
+
+    # 関連広告の画像が混ざっていないこと
+    for url in target.image_urls:
+        assert "airpods" not in url.lower()
+        assert "pet" not in url.lower()
+        assert "toy" not in url.lower()
+        assert "bike" not in url.lower()
+
+    # description に関連広告のテキストが混入していないこと
+    desc = target.description_full or ""
+    assert "AirPods" not in desc
+    assert "ガチャ" not in desc
+
+    # seller_type_hint は本体の「個人出品」を優先（関連広告の「事業者出品」/「法人出品」を拾わない）
+    assert target.seller_type_hint == "individual"
 
 
 def test_collect_listing_images_respects_limit() -> None:

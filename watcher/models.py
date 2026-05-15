@@ -29,6 +29,7 @@ class Listing:
     image_urls: list[str] = field(default_factory=list)
     seller_name: str | None = None
     seller_type_hint: str | None = None
+    seller_post_count: int | None = None  # この出品者の累計出品数（個人/業者判定の強シグナル）
     posted_date: date | None = None
     last_updated_date: date | None = None
     view_count: int | None = None

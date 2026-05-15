@@ -20,6 +20,7 @@ create table if not exists jmty_listings (
     image_urls         jsonb default '[]'::jsonb,
     seller_name        text,
     seller_type_hint   text,
+    seller_post_count  int,
     posted_date        date,
     last_updated_date  date,
     favorite_count     int,
