@@ -79,6 +79,21 @@ Environment Variables に `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SUPABASE
 
 `.github/workflows/watcher.yml` を配置済み。Secrets 登録後、**Actions** タブから `Second Hand Watcher` を手動実行して動作確認 → 問題なければ cron で自動稼働。
 
+## 開発支援ツール
+
+| コマンド | 用途 |
+| --- | --- |
+| `uv run pytest` | パーサ / 分類器パース / Slack Block の単体テスト |
+| `uv run python -m watcher.debug_scrape` | 実サイトを叩いて欠損率レポート |
+| `uv run python -m watcher.debug_scrape --from-html listing.html --detail-html detail.html` | 保存済みHTMLでオフライン解析 |
+| `uv run python -m watcher.offline_demo --listing tests/fixtures/listing_sample.html --detail tests/fixtures/detail_sample.html` | パイプライン全体（分類器・DM・Slackペイロード生成）をモックで一気通貫実行 |
+| `uv run python scripts/preview_slack.py [--modal] [--out preview.json]` | Slack Block Kit Builder用JSON生成 |
+| `uv run python scripts/validate_sql.py` | sql/schema.sql の静的検証 |
+| `uv run python scripts/estimate_cost.py` | Claude API 月額コスト試算 |
+| `uv run ruff check watcher tests scripts` | Lint |
+
+詳しい構築手順は `SETUP.md` 参照。
+
 ## 運用メモ
 
 - **通知優先度**: S/A/B のみ Slack に投下。C（非トレーラーハウス）は DB に残すだけ。
@@ -99,12 +114,22 @@ Environment Variables に `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SUPABASE
 
 ```
 .
-├── .github/workflows/watcher.yml   # 毎時cron
+├── .github/workflows/
+│   ├── watcher.yml                 # 毎時cron
+│   └── ci.yml                      # push毎にruff+pytest+SQL検証
 ├── handler/
 │   ├── api/slack_interactive.py    # Vercel Serverless
 │   ├── vercel.json
 │   └── requirements.txt
+├── scripts/
+│   ├── preview_slack.py            # Slack Block Kit Builder用JSON
+│   ├── validate_sql.py             # スキーマ静的検証
+│   └── estimate_cost.py            # 月額コスト試算
 ├── sql/schema.sql                  # Supabaseスキーマ
+├── tests/
+│   ├── fixtures/                   # 合成HTMLサンプル
+│   └── test_*.py                   # pytest
+├── SETUP.md                        # 構築手順書
 ├── watcher/
 │   ├── main.py                     # エントリポイント
 │   ├── config.py
@@ -115,6 +140,8 @@ Environment Variables に `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SUPABASE
 │   ├── slack_notifier.py
 │   ├── db.py
 │   ├── anthropic_utils.py
+│   ├── debug_scrape.py             # スクレイパー単体デバッグCLI
+│   ├── offline_demo.py             # パイプライン全体ドライラン
 │   └── prompts/
 │       ├── classifier.txt
 │       └── dm_generator.txt

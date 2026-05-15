@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Ruff lint
+        run: uv run ruff check watcher tests scripts
+
+      - name: SQL static validation
+        run: uv run python scripts/validate_sql.py
+
+      - name: Pytest
+        run: uv run pytest -v
+
+      - name: Offline pipeline smoke test
+        run: |
+          uv run python -m watcher.offline_demo \
+            --listing tests/fixtures/listing_sample.html \
+            --detail tests/fixtures/detail_sample.html \
+            --out-dir /tmp/offline_out
+          test -f /tmp/offline_out/_summary.json
+          test -f /tmp/offline_out/slack_article-1o9e6w.json
+
+      - name: Slack preview generation
+        run: |
+          uv run python scripts/preview_slack.py --out /tmp/slack_msg.json
+          uv run python scripts/preview_slack.py --modal --out /tmp/slack_modal.json
+          python -c "import json; json.load(open('/tmp/slack_msg.json')); json.load(open('/tmp/slack_modal.json'))"

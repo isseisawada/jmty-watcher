@@ -250,23 +250,7 @@ class JmtyScraper:
         if desc_node:
             listing.description_full = desc_node.text(strip=True)[:8000]
 
-        image_urls: list[str] = []
-        for img in tree.css("img"):
-            src = (
-                img.attributes.get("data-src")
-                or img.attributes.get("data-original")
-                or img.attributes.get("src")
-                or ""
-            )
-            if not src.startswith("http"):
-                continue
-            if "cdn.jmty" not in src and "jmty" not in src:
-                continue
-            if src in image_urls:
-                continue
-            image_urls.append(src)
-            if len(image_urls) >= 5:
-                break
+        image_urls = _collect_listing_images(tree, max_images=5)
         if image_urls:
             listing.image_urls = image_urls
             if not listing.thumbnail_url:
@@ -328,6 +312,52 @@ class JmtyScraper:
                 except ValueError:
                     pass
         return None
+
+
+# 画像セレクタヘルパ。共有アバター・no_image プレースホルダ・SVG等は弾く。
+_IMG_BLOCKLIST_TOKENS = (
+    "no_image",
+    "no-image",
+    "noimage",
+    "placeholder",
+    "default",
+    "avatar",
+    "icon",
+    "logo",
+    ".svg",
+)
+
+
+def _is_useful_image_url(src: str) -> bool:
+    if not src or not src.startswith("http"):
+        return False
+    lower = src.lower()
+    if any(token in lower for token in _IMG_BLOCKLIST_TOKENS):
+        return False
+    if "jmty" not in lower:
+        return False
+    return True
+
+
+def _collect_listing_images(tree: HTMLParser, max_images: int = 5) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for img in tree.css("img"):
+        src = (
+            img.attributes.get("data-src")
+            or img.attributes.get("data-original")
+            or img.attributes.get("src")
+            or ""
+        )
+        if not _is_useful_image_url(src):
+            continue
+        if src in seen:
+            continue
+        seen.add(src)
+        out.append(src)
+        if len(out) >= max_images:
+            break
+    return out
 
 
 # Rough prefecture slug → Japanese name. Jimoty uses these in URLs.
