@@ -14,7 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 def _get(name: str, default: str | None = None, required: bool = False) -> str | None:
-    value = os.environ.get(name, default)
+    raw = os.environ.get(name)
+    # GitHub Actions の `${{ vars.X }}` は未定義時に空文字を流し込んでくるため、
+    # 空文字も「未設定」として default にフォールバックする。
+    value = raw if raw not in (None, "") else default
     if required and not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
