@@ -154,6 +154,101 @@ def test_parse_detail_inquiry_closed_default_false() -> None:
     assert target.inquiry_closed is False
 
 
+def test_parse_detail_next_data_article_closed_flag_sets_inquiry_closed() -> None:
+    """__NEXT_DATA__ の article.closed: True で inquiry_closed が True になる。
+
+    実環境では「お問い合わせの受付は終了いたしました」は React レンダリングで
+    HTML 本文に現れないため、NEXT_DATA の article.closed を見るのが正解。
+    """
+    import json
+
+    next_data = {
+        "props": {
+            "pageProps": {
+                "articleResults": {
+                    "article": {
+                        "title": "古いトレーラーハウス",
+                        "text": "本文",
+                        "closed": True,
+                        "par_category_items": {"price": 100000},
+                        "favorite_user_count": 1,
+                        "images": [],
+                        "locations": [],
+                        "created_at": "2025-09-08T11:30:01+09:00",
+                        "updated_at": "2025-09-09T10:15:27+09:00",
+                        "business": False,
+                    },
+                    "post_user": {},
+                }
+            }
+        }
+    }
+    html = (
+        f'<html><head><script id="__NEXT_DATA__" type="application/json">'
+        f"{json.dumps(next_data)}</script></head><body></body></html>"
+    )
+    target = Listing(
+        article_id="article-1jpqgf",
+        url="",
+        title="",
+        price_yen=None,
+        prefecture=None,
+        city=None,
+        category_label=None,
+        thumbnail_url=None,
+    )
+    s = _scraper()
+    try:
+        s.parse_detail(target, html)
+    finally:
+        s.close()
+    assert target.inquiry_closed is True
+
+
+def test_parse_detail_next_data_article_closed_false_keeps_open() -> None:
+    import json
+
+    next_data = {
+        "props": {
+            "pageProps": {
+                "articleResults": {
+                    "article": {
+                        "title": "現役トレーラーハウス",
+                        "text": "本文",
+                        "closed": False,
+                        "par_category_items": {"price": 1000000},
+                        "favorite_user_count": 0,
+                        "images": [],
+                        "locations": [],
+                        "business": False,
+                    },
+                    "post_user": {},
+                }
+            }
+        }
+    }
+    html = (
+        f'<html><body><script id="__NEXT_DATA__" type="application/json">'
+        f"{json.dumps(next_data)}</script></body></html>"
+    )
+    target = Listing(
+        article_id="article-x",
+        url="",
+        title="",
+        price_yen=None,
+        prefecture=None,
+        city=None,
+        category_label=None,
+        thumbnail_url=None,
+    )
+    s = _scraper()
+    try:
+        s.parse_detail(target, html)
+    finally:
+        s.close()
+    assert target.inquiry_closed is False
+
+
 def test_parse_detail_fills_description_and_dates() -> None:
     listing_html = (FIXTURES / "listing_sample.html").read_text(encoding="utf-8")
     detail_html = (FIXTURES / "detail_sample.html").read_text(encoding="utf-8")
