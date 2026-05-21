@@ -87,6 +87,8 @@ Environment Variables に `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SUPABASE
 | `uv run python -m watcher.debug_scrape` | 実サイトを叩いて欠損率レポート |
 | `uv run python -m watcher.debug_scrape --from-html listing.html --detail-html detail.html` | 保存済みHTMLでオフライン解析 |
 | `uv run python -m watcher.offline_demo --listing tests/fixtures/listing_sample.html --detail tests/fixtures/detail_sample.html` | パイプライン全体（分類器・DM・Slackペイロード生成）をモックで一気通貫実行 |
+| `uv run python -m watcher.backfill_dm --dry-run` | DM 草案が未生成の対象 listing を列挙（priority 仕様変更時のバックフィル確認） |
+| `uv run python -m watcher.backfill_dm` | 上記対象に対して実際に DM 生成→保存 |
 | `uv run python scripts/preview_slack.py [--modal] [--out preview.json]` | Slack Block Kit Builder用JSON生成 |
 | `uv run python scripts/validate_sql.py` | sql/schema.sql の静的検証 |
 | `uv run python scripts/estimate_cost.py` | Claude API 月額コスト試算 |

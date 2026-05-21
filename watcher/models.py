@@ -7,6 +7,14 @@ from datetime import date
 from typing import Any
 
 
+def _parse_iso_date(value: Any) -> date | None:
+    if not value:
+        return None
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
+
+
 @dataclass
 class Listing:
     """A scraped Jimoty listing. Fields below `snippet` are filled from the detail page."""
@@ -51,6 +59,29 @@ class Listing:
                 row[k] = v.isoformat()
         return row
 
+    @classmethod
+    def from_db_row(cls, row: dict[str, Any]) -> "Listing":
+        """Supabase の jmty_listings 行から復元（バックフィル等で使用）。"""
+        return cls(
+            article_id=row["article_id"],
+            url=row.get("url") or "",
+            title=row.get("title") or "",
+            price_yen=row.get("price_yen"),
+            prefecture=row.get("prefecture"),
+            city=row.get("city"),
+            category_label=row.get("category_label"),
+            thumbnail_url=row.get("thumbnail_url"),
+            description_full=row.get("description_full"),
+            image_urls=list(row.get("image_urls") or []),
+            seller_name=row.get("seller_name"),
+            seller_type_hint=row.get("seller_type_hint"),
+            seller_post_count=row.get("seller_post_count"),
+            posted_date=_parse_iso_date(row.get("posted_date")),
+            last_updated_date=_parse_iso_date(row.get("last_updated_date")),
+            view_count=row.get("view_count"),
+            favorite_count=row.get("favorite_count"),
+        )
+
 
 @dataclass
 class Classification:
@@ -65,6 +96,24 @@ class Classification:
     sales_pitch_hook: str
     model_version: str
     raw_response: dict[str, Any] | None = None
+
+    @classmethod
+    def from_db_row(cls, row: dict[str, Any]) -> "Classification":
+        return cls(
+            is_actual_trailer_house=bool(row.get("is_actual_trailer_house")),
+            seller_type=row.get("seller_type") or "",
+            trailer_category=row.get("trailer_category") or "",
+            estimated_market_price_yen=row.get("estimated_market_price_yen"),
+            price_gap_ratio=float(row["price_gap_ratio"])
+            if row.get("price_gap_ratio") is not None
+            else None,
+            condition_grade=row.get("condition_grade") or "",
+            priority=row.get("priority") or "",
+            concerns=list(row.get("concerns") or []),
+            sales_pitch_hook=row.get("sales_pitch_hook") or "",
+            model_version=row.get("model_version") or "",
+            raw_response=row.get("raw_response"),
+        )
 
 
 @dataclass
