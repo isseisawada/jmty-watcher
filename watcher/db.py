@@ -52,6 +52,26 @@ class Db:
         resp = self.client.table("jmty_listings").select("article_id").execute()
         return {row["article_id"] for row in (resp.data or [])}
 
+    def list_all_listing_rows(self) -> list[dict[str, Any]]:
+        """全 listing 行を生 dict で返す。バックフィル等の管理スクリプト用。"""
+        resp = self.client.table("jmty_listings").select("*").execute()
+        return list(resp.data or [])
+
+    def list_listing_ids_with_dm_draft(self) -> set[str]:
+        resp = self.client.table("dm_drafts").select("listing_id").execute()
+        return {row["listing_id"] for row in (resp.data or [])}
+
+    def get_latest_classification_row(self, listing_id: str) -> dict[str, Any] | None:
+        resp = (
+            self.client.table("classifications")
+            .select("*")
+            .eq("listing_id", listing_id)
+            .order("classified_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return resp.data[0] if resp.data else None
+
     # --------------------------------------------------------- classifications
     def insert_classification(self, listing_id: str, c: Classification) -> str:
         row: dict[str, Any] = {
