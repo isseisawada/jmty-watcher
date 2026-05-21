@@ -403,6 +403,11 @@ def _parse_detail_from_next_data(listing: Listing, next_data: dict[str, Any]) ->
         logger.warning("__NEXT_DATA__ structure unexpected (%s); skipping", e)
         return listing
 
+    # 受付終了フラグ。「お問い合わせの受付は終了いたしました」表示は React
+    # レンダリングで HTML には現れず、NEXT_DATA の article.closed が真の証拠。
+    if article.get("closed") is True:
+        listing.inquiry_closed = True
+
     if not listing.title:
         listing.title = article.get("title") or listing.title
     text = article.get("text") or ""
