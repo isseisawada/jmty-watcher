@@ -106,6 +106,54 @@ def test_parse_listing_dedupes_article_ids() -> None:
     assert ids == ["article-aaaa", "article-bbbb"]
 
 
+def test_parse_detail_sets_inquiry_closed_when_marker_present() -> None:
+    html = (
+        "<html><body>"
+        "<article class='p-articles-show'>"
+        "<h1>テストトレーラーハウス</h1>"
+        "<div>本文</div>"
+        "<div>お問い合わせの受付は終了いたしました</div>"
+        "</article></body></html>"
+    )
+    target = Listing(
+        article_id="article-closed",
+        url="",
+        title="",
+        price_yen=None,
+        prefecture=None,
+        city=None,
+        category_label=None,
+        thumbnail_url=None,
+    )
+    s = _scraper()
+    try:
+        s.parse_detail(target, html)
+    finally:
+        s.close()
+    assert target.inquiry_closed is True
+
+
+def test_parse_detail_inquiry_closed_default_false() -> None:
+    """マーカーが無ければ inquiry_closed は False のまま。"""
+    detail_html = (FIXTURES / "detail_sample.html").read_text(encoding="utf-8")
+    target = Listing(
+        article_id="article-1o9e6w",
+        url="",
+        title="",
+        price_yen=None,
+        prefecture=None,
+        city=None,
+        category_label=None,
+        thumbnail_url=None,
+    )
+    s = _scraper()
+    try:
+        s.parse_detail(target, detail_html)
+    finally:
+        s.close()
+    assert target.inquiry_closed is False
+
+
 def test_parse_detail_fills_description_and_dates() -> None:
     listing_html = (FIXTURES / "listing_sample.html").read_text(encoding="utf-8")
     detail_html = (FIXTURES / "detail_sample.html").read_text(encoding="utf-8")

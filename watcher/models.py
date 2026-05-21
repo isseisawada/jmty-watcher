@@ -41,6 +41,7 @@ class Listing:
     posted_date: date | None = None
     last_updated_date: date | None = None
     view_count: int | None = None
+    inquiry_closed: bool = False  # ジモティ側で「お問い合わせの受付は終了いたしました」表示の出品
 
     def days_since_posted(self, today: date) -> int | None:
         if self.posted_date is None:
@@ -80,6 +81,7 @@ class Listing:
             last_updated_date=_parse_iso_date(row.get("last_updated_date")),
             view_count=row.get("view_count"),
             favorite_count=row.get("favorite_count"),
+            inquiry_closed=bool(row.get("inquiry_closed")),
         )
 
 

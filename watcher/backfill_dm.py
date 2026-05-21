@@ -31,6 +31,8 @@ def find_targets(
     rows = db.list_all_listing_rows()
     out: list[tuple[str, Listing, Classification]] = []
     for row in rows:
+        if row.get("inquiry_closed"):
+            continue  # 受付終了済みは DM 生成不要
         listing_id = row["id"]
         if listing_id in listing_ids_with_dm:
             continue
