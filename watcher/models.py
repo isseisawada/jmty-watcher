@@ -41,6 +41,10 @@ class Listing:
 
     def to_db_row(self) -> dict[str, Any]:
         row = asdict(self)
+        # jmty_listings スキーマに存在しない一時フィールド（一覧ページ生テキスト等）は落とす。
+        # これらは詳細パース時により正確な値（posted_date 等）に置き換わるためDB保存不要。
+        for k in ("snippet", "created_at_text", "updated_at_text"):
+            row.pop(k, None)
         for k in ("posted_date", "last_updated_date"):
             v = row.get(k)
             if v is not None:
