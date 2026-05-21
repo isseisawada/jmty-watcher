@@ -91,6 +91,9 @@ Environment Variables に `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SUPABASE
 | `uv run python -m watcher.backfill_dm` | 上記対象に対して実際に DM 生成→保存 |
 | `uv run python -m watcher.backfill_sheets --dry-run` | スプシ未登録の listing (priority S/A/B) を列挙 |
 | `uv run python -m watcher.backfill_sheets` | 上記対象を Google Sheets に送信（重複は Apps Script 側で弾く） |
+| `uv run python -m watcher.count_jmty` | ジモティ全体の listing 数を keyword 別に計測（詳細fetchなし） |
+| `uv run python -m watcher.bulk_backfill --dry-run` | ジモティ全件を巡回し、未登録の listing 数を表示 |
+| `uv run python -m watcher.bulk_backfill` | 上記をすべて取り込む（詳細fetch + Claude分類 + DM生成 + Sheets + Slack）|
 | `uv run python scripts/preview_slack.py [--modal] [--out preview.json]` | Slack Block Kit Builder用JSON生成 |
 | `uv run python scripts/validate_sql.py` | sql/schema.sql の静的検証 |
 | `uv run python scripts/estimate_cost.py` | Claude API 月額コスト試算 |
