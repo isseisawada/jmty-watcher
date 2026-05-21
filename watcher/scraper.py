@@ -101,13 +101,14 @@ class JmtyScraper:
         return True
 
     # ----------------------------------------------------------------- listing
-    def fetch_listing_page(self, keyword: str) -> list[Listing]:
-        url = LISTING_URL_TEMPLATE.format(keyword=urllib.parse.quote(keyword))
+    def fetch_listing_page(self, keyword: str, page: int = 1) -> list[Listing]:
+        base = LISTING_URL_TEMPLATE.format(keyword=urllib.parse.quote(keyword))
+        url = base if page <= 1 else f"{base}?page={page}"
         logger.info("fetching listing page: %s", url)
         resp = self.client.get(url)
         resp.raise_for_status()
         listings = list(self._parse_listing_html(resp.text))
-        logger.info("parsed %d listings from listing page", len(listings))
+        logger.info("parsed %d listings from listing page (page=%d)", len(listings), page)
         return listings
 
     def _parse_listing_html(self, html: str) -> Iterable[Listing]:
