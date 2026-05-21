@@ -48,6 +48,7 @@ def build_sheet_payload(
     listing: Listing,
     classification: Classification,
     token: str | None,
+    dm_polite: str | None = None,
     added_at: str | None = None,
 ) -> dict[str, Any]:
     return {
@@ -61,6 +62,7 @@ def build_sheet_payload(
         "estimated_market_price_yen": classification.estimated_market_price_yen,
         "url": listing.url,
         "thumbnail_url": listing.thumbnail_url or "",
+        "dm_polite": dm_polite or "",
     }
 
 
@@ -89,12 +91,14 @@ class SheetsNotifier:
         *,
         listing: Listing,
         classification: Classification,
+        dm_polite: str | None = None,
     ) -> bool:
         """Sheets に1行追加。成功なら True、失敗ログを残して False。"""
         payload = build_sheet_payload(
             listing=listing,
             classification=classification,
             token=self.token,
+            dm_polite=dm_polite,
         )
         try:
             resp = self._client.post(self.webhook_url, json=payload)

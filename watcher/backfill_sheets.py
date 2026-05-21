@@ -23,16 +23,20 @@ logger = logging.getLogger("backfill_sheets")
 def find_targets(
     db: Db,
     priorities: set[str],
-) -> list[tuple[Listing, Classification]]:
+) -> list[tuple[str, Listing, Classification]]:
+    """(listing_id, Listing, Classification) のタプル列を返す。"""
     rows = db.list_all_listing_rows()
-    out: list[tuple[Listing, Classification]] = []
+    out: list[tuple[str, Listing, Classification]] = []
     for row in rows:
-        c_row = db.get_latest_classification_row(row["id"])
+        listing_id = row["id"]
+        c_row = db.get_latest_classification_row(listing_id)
         if c_row is None:
             continue
         if c_row.get("priority") not in priorities:
             continue
-        out.append((Listing.from_db_row(row), Classification.from_db_row(c_row)))
+        out.append(
+            (listing_id, Listing.from_db_row(row), Classification.from_db_row(c_row))
+        )
     return out
 
 
@@ -72,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         sorted(priorities),
         args.dry_run,
     )
-    for listing, classification in targets:
+    for _listing_id, listing, classification in targets:
         logger.info(
             "  - %s [%s] %s",
             classification.priority,
@@ -86,8 +90,14 @@ def main(argv: list[str] | None = None) -> int:
     success = 0
     failures: list[str] = []
     with SheetsNotifier(cfg.sheets_webhook_url, cfg.sheets_webhook_token) as sheets:
-        for listing, classification in targets:
-            if sheets.append_listing(listing=listing, classification=classification):
+        for listing_id, listing, classification in targets:
+            draft = db.get_dm_draft(listing_id)
+            dm_polite = draft.variant_polite if draft else None
+            if sheets.append_listing(
+                listing=listing,
+                classification=classification,
+                dm_polite=dm_polite,
+            ):
                 success += 1
             else:
                 failures.append(listing.article_id)

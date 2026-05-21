@@ -46,6 +46,7 @@ def test_payload_includes_all_expected_fields() -> None:
         listing=_listing(),
         classification=_classification(),
         token="t",
+        dm_polite="お世話になっております。XX社の△△と申します...",
         added_at="2026-05-21 17:30",
     )
     assert payload == {
@@ -59,7 +60,15 @@ def test_payload_includes_all_expected_fields() -> None:
         "estimated_market_price_yen": 2_000_000,
         "url": "https://jmty.jp/x/sale/article-xyz",
         "thumbnail_url": "https://img.cdn.jmty.jp/x.jpg",
+        "dm_polite": "お世話になっております。XX社の△△と申します...",
     }
+
+
+def test_payload_without_dm_polite_emits_empty_string() -> None:
+    payload = build_sheet_payload(
+        listing=_listing(), classification=_classification(), token=None
+    )
+    assert payload["dm_polite"] == ""
 
 
 def test_payload_missing_location_parts_join_cleanly() -> None:

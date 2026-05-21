@@ -23,6 +23,7 @@ const HEADERS = [
   '価格(円)',
   '推定相場(円)',
   '出品URL',
+  'DM文(丁寧版)',
   '対応状況',
   '担当者',
   'メモ',
@@ -32,6 +33,7 @@ const HEADERS = [
 const STATUS_OPTIONS = ['未対応', '対応中', '対応済', 'スルー'];
 const IMAGE_COLUMN_WIDTH = 120;
 const IMAGE_ROW_HEIGHT = 90;
+const DM_COLUMN_WIDTH = 360;
 
 // ============================================================================
 // Webhook 受信
@@ -71,6 +73,7 @@ function doPost(e) {
       body.price_yen != null ? body.price_yen : '',
       body.estimated_market_price_yen != null ? body.estimated_market_price_yen : '',
       body.url || '',
+      body.dm_polite || '',
       '未対応',
       '',
       '',
@@ -79,6 +82,11 @@ function doPost(e) {
 
     const row = sheet.getLastRow();
     sheet.setRowHeight(row, IMAGE_ROW_HEIGHT);
+    // DM 本文は長いので折り返し表示にする
+    sheet
+      .getRange(row, _colIndex('DM文(丁寧版)'))
+      .setWrap(true)
+      .setVerticalAlignment('top');
     _applyStatusValidation(sheet, row);
 
     return _json({ ok: true, row: row });
@@ -109,10 +117,11 @@ function setupSheet() {
   // 画像列の幅
   sheet.setColumnWidth(_colIndex('画像'), IMAGE_COLUMN_WIDTH);
 
-  // URL列の幅
+  // URL列・タイトル・メモ・DM の幅
   sheet.setColumnWidth(_colIndex('出品URL'), 320);
   sheet.setColumnWidth(_colIndex('タイトル'), 300);
   sheet.setColumnWidth(_colIndex('メモ'), 280);
+  sheet.setColumnWidth(_colIndex('DM文(丁寧版)'), DM_COLUMN_WIDTH);
 
   // 対応状況列のドロップダウン（2行目以降全部）
   _applyStatusValidation(sheet, 2, 1000);

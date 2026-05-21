@@ -144,10 +144,12 @@ def process_listing(
         classification.is_actual_trailer_house,
     )
 
+    dm_polite: str | None = None
     if classification.priority in DM_PRIORITIES and classification.is_actual_trailer_house:
         try:
             draft = dm_generator.generate(listing, classification, today=today)
             db.upsert_dm_draft(listing_id, draft)
+            dm_polite = draft.variant_polite or None
         except Exception as e:
             logger.exception("DM generation failed for %s: %s", listing.article_id, e)
 
@@ -169,7 +171,11 @@ def process_listing(
                     slack_message_ts=ts,
                 )
         if sheets is not None:
-            sheets.append_listing(listing=listing, classification=classification)
+            sheets.append_listing(
+                listing=listing,
+                classification=classification,
+                dm_polite=dm_polite,
+            )
 
 
 def main() -> int:
