@@ -5,7 +5,7 @@
   2. 各キーワードで一覧ページをfetch（PoCは1ページ目のみ）
   3. 新規 article_id のみ詳細ページをfetch（既出はスキップ）
   4. 全件 Claude Sonnet で分類
-  5. priority ∈ {S, A} なら DM文を生成
+  5. priority ∈ {S, A, B} なら DM文を生成
   6. priority ∈ {S, A, B} なら Slack に通知
   7. Supabase に全て保存
 """
@@ -29,7 +29,7 @@ logger = logging.getLogger("watcher")
 
 
 NOTIFY_PRIORITIES = {"S", "A", "B"}
-DM_PRIORITIES = {"S", "A"}
+DM_PRIORITIES = {"S", "A", "B"}
 
 
 def configure_logging() -> None:
