@@ -63,8 +63,12 @@ def test_find_targets_keeps_only_notify_priorities() -> None:
         },
     )
     targets = find_targets(db, priorities={"S", "A", "B"})
-    article_ids = sorted(t[0].article_id for t in targets)
+    # (listing_id, Listing, Classification) のタプル
+    article_ids = sorted(t[1].article_id for t in targets)
     assert article_ids == ["art-A", "art-B", "art-S"]
+    # listing_id が DB の id と一致
+    by_article = {t[1].article_id: t[0] for t in targets}
+    assert by_article["art-S"] == "uuid-S"
 
 
 def test_find_targets_with_restricted_priorities() -> None:
@@ -76,4 +80,5 @@ def test_find_targets_with_restricted_priorities() -> None:
         },
     )
     targets = find_targets(db, priorities={"S"})
-    assert [t[0].article_id for t in targets] == ["art-1"]
+    assert [t[1].article_id for t in targets] == ["art-1"]
+    assert targets[0][0] == "uuid-1"
