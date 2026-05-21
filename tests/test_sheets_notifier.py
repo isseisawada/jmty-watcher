@@ -9,7 +9,13 @@ import httpx
 import pytest
 
 from watcher.models import Classification, Listing
-from watcher.sheets_notifier import SheetsNotifier, build_sheet_payload
+from watcher.sheets_notifier import (
+    SheetsNotifier,
+    _format_concerns,
+    _format_days,
+    _format_gap_ratio,
+    build_sheet_payload,
+)
 
 
 def _listing() -> Listing:
@@ -30,13 +36,13 @@ def _classification(priority: str = "B") -> Classification:
     return Classification(
         is_actual_trailer_house=True,
         seller_type="individual",
-        trailer_category="trailer_house",
+        trailer_category="residential",
         estimated_market_price_yen=2_000_000,
-        price_gap_ratio=-0.25,
-        condition_grade="good",
+        price_gap_ratio=0.5,
+        condition_grade="B",
         priority=priority,
-        concerns=[],
-        sales_pitch_hook="安い",
+        concerns=["水回り不明", "輸送経路要確認"],
+        sales_pitch_hook="築浅で設備完備",
         model_version="claude-sonnet-4-6",
     )
 
@@ -47,6 +53,7 @@ def test_payload_includes_all_expected_fields() -> None:
         classification=_classification(),
         token="t",
         dm_polite="お世話になっております。XX社の△△と申します...",
+        days_since_posted=790,
         added_at="2026-05-21 17:30",
     )
     assert payload == {
@@ -56,19 +63,57 @@ def test_payload_includes_all_expected_fields() -> None:
         "priority": "B",
         "title": "トレーラーハウス売ります",
         "location": "千葉 柏市",
+        "days_since_posted": "790日",
         "price_yen": 1_500_000,
         "estimated_market_price_yen": 2_000_000,
+        "price_gap_ratio": "+50%",
+        "condition_grade": "B",
+        "sales_pitch_hook": "築浅で設備完備",
+        "concerns": "・水回り不明\n・輸送経路要確認",
         "url": "https://jmty.jp/x/sale/article-xyz",
         "thumbnail_url": "https://img.cdn.jmty.jp/x.jpg",
         "dm_polite": "お世話になっております。XX社の△△と申します...",
     }
 
 
-def test_payload_without_dm_polite_emits_empty_string() -> None:
+def test_payload_handles_missing_classification_fields() -> None:
+    cls = _classification()
+    cls.price_gap_ratio = None
+    cls.condition_grade = ""
+    cls.concerns = []
+    cls.sales_pitch_hook = ""
     payload = build_sheet_payload(
-        listing=_listing(), classification=_classification(), token=None
+        listing=_listing(),
+        classification=cls,
+        token=None,
+        days_since_posted=None,
     )
+    assert payload["days_since_posted"] == ""
+    assert payload["price_gap_ratio"] == ""
+    assert payload["condition_grade"] == ""
+    assert payload["sales_pitch_hook"] == ""
+    assert payload["concerns"] == ""
     assert payload["dm_polite"] == ""
+
+
+def test_format_gap_ratio_signs() -> None:
+    assert _format_gap_ratio(0.5) == "+50%"
+    assert _format_gap_ratio(-0.25) == "-25%"
+    assert _format_gap_ratio(0) == "+0%"
+    assert _format_gap_ratio(None) == ""
+
+
+def test_format_days() -> None:
+    assert _format_days(0) == "0日"
+    assert _format_days(790) == "790日"
+    assert _format_days(None) == ""
+
+
+def test_format_concerns_bullets() -> None:
+    assert _format_concerns(["a", "b"]) == "・a\n・b"
+    assert _format_concerns(["a", "", None]) == "・a"  # falsy items dropped  # type: ignore[list-item]
+    assert _format_concerns([]) == ""
+    assert _format_concerns(None) == ""
 
 
 def test_payload_missing_location_parts_join_cleanly() -> None:

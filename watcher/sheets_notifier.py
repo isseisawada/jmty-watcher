@@ -43,12 +43,31 @@ def _format_location(listing: Listing) -> str:
     return " ".join(p for p in parts if p) or ""
 
 
+def _format_gap_ratio(ratio: float | None) -> str:
+    if ratio is None:
+        return ""
+    return f"{ratio * 100:+.0f}%"
+
+
+def _format_days(days: int | None) -> str:
+    if days is None:
+        return ""
+    return f"{days}日"
+
+
+def _format_concerns(items: list[str] | None) -> str:
+    if not items:
+        return ""
+    return "\n".join(f"・{x}" for x in items if x)
+
+
 def build_sheet_payload(
     *,
     listing: Listing,
     classification: Classification,
     token: str | None,
     dm_polite: str | None = None,
+    days_since_posted: int | None = None,
     added_at: str | None = None,
 ) -> dict[str, Any]:
     return {
@@ -58,8 +77,13 @@ def build_sheet_payload(
         "priority": classification.priority,
         "title": listing.title or "",
         "location": _format_location(listing),
+        "days_since_posted": _format_days(days_since_posted),
         "price_yen": listing.price_yen,
         "estimated_market_price_yen": classification.estimated_market_price_yen,
+        "price_gap_ratio": _format_gap_ratio(classification.price_gap_ratio),
+        "condition_grade": classification.condition_grade or "",
+        "sales_pitch_hook": classification.sales_pitch_hook or "",
+        "concerns": _format_concerns(classification.concerns),
         "url": listing.url,
         "thumbnail_url": listing.thumbnail_url or "",
         "dm_polite": dm_polite or "",
@@ -92,6 +116,7 @@ class SheetsNotifier:
         listing: Listing,
         classification: Classification,
         dm_polite: str | None = None,
+        days_since_posted: int | None = None,
     ) -> bool:
         """Sheets に1行追加。成功なら True、失敗ログを残して False。"""
         payload = build_sheet_payload(
@@ -99,6 +124,7 @@ class SheetsNotifier:
             classification=classification,
             token=self.token,
             dm_polite=dm_polite,
+            days_since_posted=days_since_posted,
         )
         try:
             resp = self._client.post(self.webhook_url, json=payload)
