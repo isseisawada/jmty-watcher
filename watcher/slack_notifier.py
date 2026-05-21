@@ -1,8 +1,9 @@
 """Slack通知。
 
 Block Kit を組み立てて `chat.postMessage` で投下する。
-「DM文を見る」の実体はVercelハンドラ側のモーダル。
-ここではペイロードに listing_id を value として載せるだけ。
+
+通知メッセージのアクションは URL リンクボタンのみ（インタラクティブな
+コールバックはなし）。詳細確認・DM 文閲覧はスプシ側で行う。
 """
 
 from __future__ import annotations
@@ -18,12 +19,19 @@ from .models import Classification, Listing
 logger = logging.getLogger(__name__)
 
 PRIORITY_EMOJI = {"S": "🔥", "A": "⭐", "B": "🔸", "C": "▫️"}
+SHEET_REGISTERED_BANNER = "◎ 中古トレーラーハウスをGoogleスプレッドシートに追加登録しました。"
 
 
 class SlackNotifier:
-    def __init__(self, bot_token: str, channel_id: str) -> None:
+    def __init__(
+        self,
+        bot_token: str,
+        channel_id: str,
+        sheets_view_url: str | None = None,
+    ) -> None:
         self.client = WebClient(token=bot_token)
         self.channel_id = channel_id
+        self.sheets_view_url = sheets_view_url
 
     def post_listing(
         self,
@@ -38,6 +46,7 @@ class SlackNotifier:
             listing=listing,
             classification=classification,
             days_since_posted=days_since_posted,
+            sheets_view_url=self.sheets_view_url,
         )
         priority = classification.priority
         text_fallback = f"[{priority}] {listing.title or 'ジモティ新着案件'}"
@@ -61,6 +70,7 @@ def build_listing_blocks(
     listing: Listing,
     classification: Classification,
     days_since_posted: int | None,
+    sheets_view_url: str | None = None,
 ) -> list[dict[str, Any]]:
     priority = classification.priority
     emoji = PRIORITY_EMOJI.get(priority, "")
@@ -79,6 +89,10 @@ def build_listing_blocks(
     days_text = f"{days_since_posted}日" if days_since_posted is not None else "不明"
 
     blocks: list[dict[str, Any]] = [
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": SHEET_REGISTERED_BANNER},
+        },
         {
             "type": "header",
             "text": {"type": "plain_text", "text": header_text, "emoji": True},
@@ -141,29 +155,27 @@ def build_listing_blocks(
         }
     )
 
-    actions: list[dict[str, Any]] = [
-        {
-            "type": "button",
-            "text": {"type": "plain_text", "text": "✉️ DM文を見る", "emoji": True},
-            "style": "primary",
-            "action_id": "view_dm",
-            "value": listing_id,
-        },
+    actions: list[dict[str, Any]] = []
+    if sheets_view_url:
+        actions.append(
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "📊 Sheetを見る", "emoji": True},
+                "style": "primary",
+                "action_id": "open_sheet",
+                "url": sheets_view_url,
+                "value": listing_id,
+            }
+        )
+    actions.append(
         {
             "type": "button",
             "text": {"type": "plain_text", "text": "🔗 出品ページ", "emoji": True},
             "action_id": "open_listing",
             "url": listing.url,
             "value": listing_id,
-        },
-        {
-            "type": "button",
-            "text": {"type": "plain_text", "text": "🙅 スルー", "emoji": True},
-            "style": "danger",
-            "action_id": "reject",
-            "value": listing_id,
-        },
-    ]
+        }
+    )
     blocks.extend([{"type": "divider"}, {"type": "actions", "elements": actions}])
 
     return blocks

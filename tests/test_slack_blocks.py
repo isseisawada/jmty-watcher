@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from watcher.models import Classification, Listing
-from watcher.slack_notifier import build_listing_blocks
+from watcher.slack_notifier import SHEET_REGISTERED_BANNER, build_listing_blocks
 
 
 def _sample() -> tuple[Listing, Classification]:
@@ -35,28 +35,57 @@ def _sample() -> tuple[Listing, Classification]:
     return listing, classification
 
 
-def test_build_listing_blocks_contains_expected_actions() -> None:
+def test_build_listing_blocks_first_block_is_sheet_banner() -> None:
     listing, classification = _sample()
     blocks = build_listing_blocks(
         listing_id="abc-123",
         listing=listing,
         classification=classification,
         days_since_posted=4,
+        sheets_view_url="https://docs.google.com/spreadsheets/d/abc/edit",
     )
-    # JSON シリアライズ可能であること
     json.dumps(blocks)
+    # 先頭にスプシ追加バナーが入る
+    assert blocks[0]["type"] == "section"
+    assert blocks[0]["text"]["text"] == SHEET_REGISTERED_BANNER
+    # 次にタイトル header
+    assert blocks[1]["type"] == "header"
 
-    types = [b["type"] for b in blocks]
-    assert "header" in types
-    assert "section" in types
-    assert "image" in types
-    assert "actions" in types
 
+def test_actions_have_sheet_and_listing_buttons_only() -> None:
+    listing, classification = _sample()
+    blocks = build_listing_blocks(
+        listing_id="abc-123",
+        listing=listing,
+        classification=classification,
+        days_since_posted=4,
+        sheets_view_url="https://docs.google.com/spreadsheets/d/abc/edit",
+    )
     actions_block = next(b for b in blocks if b["type"] == "actions")
     action_ids = [e.get("action_id") for e in actions_block["elements"]]
-    assert "view_dm" in action_ids
-    assert "open_listing" in action_ids
-    assert "reject" in action_ids
+    assert action_ids == ["open_sheet", "open_listing"]
+
+    sheet_btn = next(e for e in actions_block["elements"] if e["action_id"] == "open_sheet")
+    listing_btn = next(e for e in actions_block["elements"] if e["action_id"] == "open_listing")
+    assert sheet_btn["url"] == "https://docs.google.com/spreadsheets/d/abc/edit"
+    assert listing_btn["url"] == listing.url
+    # DM文/スルー ボタンは廃止済み
+    assert "view_dm" not in action_ids
+    assert "reject" not in action_ids
+
+
+def test_actions_omit_sheet_button_when_view_url_missing() -> None:
+    listing, classification = _sample()
+    blocks = build_listing_blocks(
+        listing_id="x",
+        listing=listing,
+        classification=classification,
+        days_since_posted=None,
+        sheets_view_url=None,
+    )
+    actions_block = next(b for b in blocks if b["type"] == "actions")
+    action_ids = [e.get("action_id") for e in actions_block["elements"]]
+    assert action_ids == ["open_listing"]
 
 
 def test_header_priority_emoji() -> None:
@@ -67,8 +96,9 @@ def test_header_priority_emoji() -> None:
         classification=classification,
         days_since_posted=None,
     )
-    header_text = blocks[0]["text"]["text"]
-    assert "[S]" in header_text
+    # 先頭がバナー、次が header（[S] が入る）
+    header_block = next(b for b in blocks if b["type"] == "header")
+    assert "[S]" in header_block["text"]["text"]
 
 
 def test_handles_missing_optional_fields() -> None:

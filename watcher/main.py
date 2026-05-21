@@ -51,7 +51,9 @@ def run(cfg: Config) -> int:
     dm_generator = DmGenerator(cfg.anthropic_api_key, cfg.dm_model, cfg.yadokari_inquiry_url)
     notifier: SlackNotifier | None = None
     if cfg.slack_bot_token and cfg.slack_channel_id and not cfg.dry_run:
-        notifier = SlackNotifier(cfg.slack_bot_token, cfg.slack_channel_id)
+        notifier = SlackNotifier(
+            cfg.slack_bot_token, cfg.slack_channel_id, sheets_view_url=cfg.sheets_view_url
+        )
 
     sheets: SheetsNotifier | None = None
     if cfg.sheets_webhook_url and not cfg.dry_run:
