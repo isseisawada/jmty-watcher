@@ -41,6 +41,10 @@ NEXT_DATA_RE = re.compile(
     r'<script id="__NEXT_DATA__"[^>]*>(.+?)</script>', re.DOTALL
 )
 
+# ジモティが出品の問い合わせを締め切ったときの本文マーカー。
+# 例: https://jmty.jp/hokkaido/sale-oth/article-1jpqgf
+_INQUIRY_CLOSED_MARKER = "お問い合わせの受付は終了いたしました"
+
 
 class JmtyScraper:
     def __init__(
@@ -279,6 +283,11 @@ class JmtyScraper:
 
     def parse_detail(self, listing: Listing, html: str) -> Listing:
         """__NEXT_DATA__ を最優先、無ければHTMLフォールバック。"""
+        # 「お問い合わせの受付は終了いたしました」表示 → これ以降の分類・通知は不要。
+        # NEXT_DATA / HTML 両方で最初に検出する（marker は静的なテキストなのでどちらでも拾える）。
+        if _INQUIRY_CLOSED_MARKER in html:
+            listing.inquiry_closed = True
+
         next_data = _extract_next_data(html)
         if next_data is not None:
             return _parse_detail_from_next_data(listing, next_data)

@@ -137,6 +137,14 @@ def process_listing(
     listing_id = db.upsert_listing(listing)
     logger.info("upserted listing_id=%s article=%s", listing_id, listing.article_id)
 
+    if listing.inquiry_closed:
+        # ジモティ側で受付終了済み → Claude 分類も DM も Slack/Sheets も無駄。
+        # DB には残しておくので、次回 cron で再 fetch されることもない。
+        logger.info(
+            "inquiry closed for %s; skipping classify/notify", listing.article_id
+        )
+        return
+
     classification = classifier.classify(listing, today=today)
     db.insert_classification(listing_id, classification)
     logger.info(

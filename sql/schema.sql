@@ -25,6 +25,7 @@ create table if not exists jmty_listings (
     last_updated_date  date,
     favorite_count     int,
     view_count         int,
+    inquiry_closed     boolean not null default false,
     raw_html           text,
     first_seen_at      timestamptz not null default now(),
     last_checked_at    timestamptz not null default now()

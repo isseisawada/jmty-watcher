@@ -29,6 +29,8 @@ def find_targets(
     rows = db.list_all_listing_rows()
     out: list[tuple[str, Listing, Classification]] = []
     for row in rows:
+        if row.get("inquiry_closed"):
+            continue  # 受付終了済みはスプシ非対象
         listing_id = row["id"]
         c_row = db.get_latest_classification_row(listing_id)
         if c_row is None:
