@@ -45,15 +45,19 @@ function doPost(e) {
 
     const sheet = _ensureSheet();
 
-    // article_id で重複チェック（再実行や手動再投入で多重登録しない）
+    // article_id で重複チェック（再実行や手動再投入で多重登録しない）。
+    // データ行が1行も無い（=ヘッダだけ）状態では Range を作れないのでスキップ。
     if (body.article_id) {
-      const finder = sheet
-        .getRange(2, _colIndex('article_id'), Math.max(sheet.getLastRow() - 1, 0), 1)
-        .createTextFinder(String(body.article_id))
-        .matchEntireCell(true);
-      const hit = finder.findNext();
-      if (hit) {
-        return _json({ ok: true, row: hit.getRow(), deduped: true });
+      const lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        const finder = sheet
+          .getRange(2, _colIndex('article_id'), lastRow - 1, 1)
+          .createTextFinder(String(body.article_id))
+          .matchEntireCell(true);
+        const hit = finder.findNext();
+        if (hit) {
+          return _json({ ok: true, row: hit.getRow(), deduped: true });
+        }
       }
     }
 
