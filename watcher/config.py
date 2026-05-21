@@ -35,6 +35,9 @@ class Config:
     slack_bot_token: str | None
     slack_channel_id: str | None
 
+    sheets_webhook_url: str | None
+    sheets_webhook_token: str | None
+
     search_keywords: tuple[str, ...]
     max_details_per_run: int
     request_delay_seconds: float
@@ -57,6 +60,8 @@ def load_config() -> Config:
         supabase_key=_get("SUPABASE_SERVICE_KEY") or _get("SUPABASE_KEY", required=True),
         slack_bot_token=_get("SLACK_BOT_TOKEN"),
         slack_channel_id=_get("SLACK_CHANNEL_ID"),
+        sheets_webhook_url=_get("SHEETS_WEBHOOK_URL"),
+        sheets_webhook_token=_get("SHEETS_WEBHOOK_TOKEN"),
         search_keywords=keywords,
         max_details_per_run=int(_get("WATCHER_MAX_DETAILS_PER_RUN", "30")),
         request_delay_seconds=float(_get("WATCHER_REQUEST_DELAY_SECONDS", "2.5")),

@@ -23,6 +23,7 @@ from .db import Db
 from .dm_generator import DmGenerator
 from .models import Listing
 from .scraper import JmtyScraper
+from .sheets_notifier import SheetsNotifier
 from .slack_notifier import SlackNotifier
 
 logger = logging.getLogger("watcher")
@@ -51,6 +52,10 @@ def run(cfg: Config) -> int:
     notifier: SlackNotifier | None = None
     if cfg.slack_bot_token and cfg.slack_channel_id and not cfg.dry_run:
         notifier = SlackNotifier(cfg.slack_bot_token, cfg.slack_channel_id)
+
+    sheets: SheetsNotifier | None = None
+    if cfg.sheets_webhook_url and not cfg.dry_run:
+        sheets = SheetsNotifier(cfg.sheets_webhook_url, cfg.sheets_webhook_token)
 
     existing_ids = db.list_existing_article_ids()
     logger.info("existing listings in DB: %d", len(existing_ids))
@@ -93,19 +98,24 @@ def run(cfg: Config) -> int:
                 logger.exception("detail fetch failed for %s: %s", listing.article_id, e)
 
         # ---------------------------------------------------------------- pipeline
-        for listing in to_detail:
-            try:
-                process_listing(
-                    listing=listing,
-                    db=db,
-                    classifier=classifier,
-                    dm_generator=dm_generator,
-                    notifier=notifier,
-                    today=today,
-                    dry_run=cfg.dry_run,
-                )
-            except Exception as e:
-                logger.exception("pipeline failed for %s: %s", listing.article_id, e)
+        try:
+            for listing in to_detail:
+                try:
+                    process_listing(
+                        listing=listing,
+                        db=db,
+                        classifier=classifier,
+                        dm_generator=dm_generator,
+                        notifier=notifier,
+                        sheets=sheets,
+                        today=today,
+                        dry_run=cfg.dry_run,
+                    )
+                except Exception as e:
+                    logger.exception("pipeline failed for %s: %s", listing.article_id, e)
+        finally:
+            if sheets is not None:
+                sheets.close()
 
     logger.info("done")
     return 0
@@ -118,6 +128,7 @@ def process_listing(
     classifier: Classifier,
     dm_generator: DmGenerator,
     notifier: SlackNotifier | None,
+    sheets: SheetsNotifier | None,
     today: date,
     dry_run: bool,
 ) -> None:
@@ -141,21 +152,24 @@ def process_listing(
             logger.exception("DM generation failed for %s: %s", listing.article_id, e)
 
     if classification.priority in NOTIFY_PRIORITIES:
-        if dry_run or notifier is None:
-            logger.info("[dry-run] would notify Slack for %s", listing.article_id)
+        if dry_run:
+            logger.info("[dry-run] would notify Slack/Sheets for %s", listing.article_id)
             return
-        ts = notifier.post_listing(
-            listing_id=listing_id,
-            listing=listing,
-            classification=classification,
-            days_since_posted=listing.days_since_posted(today),
-        )
-        if ts:
-            db.log_outreach_pending(
+        if notifier is not None:
+            ts = notifier.post_listing(
                 listing_id=listing_id,
-                slack_channel_id=notifier.channel_id,
-                slack_message_ts=ts,
+                listing=listing,
+                classification=classification,
+                days_since_posted=listing.days_since_posted(today),
             )
+            if ts:
+                db.log_outreach_pending(
+                    listing_id=listing_id,
+                    slack_channel_id=notifier.channel_id,
+                    slack_message_ts=ts,
+                )
+        if sheets is not None:
+            sheets.append_listing(listing=listing, classification=classification)
 
 
 def main() -> int:
