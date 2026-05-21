@@ -175,6 +175,7 @@ def process_listing(
                 listing=listing,
                 classification=classification,
                 dm_polite=dm_polite,
+                days_since_posted=listing.days_since_posted(today),
             )
 
 

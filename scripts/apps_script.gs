@@ -20,8 +20,13 @@ const HEADERS = [
   'priority',
   'タイトル',
   '場所',
+  '経過日数',
   '価格(円)',
   '推定相場(円)',
+  '乖離率',
+  '状態',
+  '引きポイント',
+  '懸念点',
   '出品URL',
   'DM文(丁寧版)',
   '対応状況',
@@ -34,6 +39,8 @@ const STATUS_OPTIONS = ['未対応', '対応中', '対応済', 'スルー'];
 const IMAGE_COLUMN_WIDTH = 120;
 const IMAGE_ROW_HEIGHT = 90;
 const DM_COLUMN_WIDTH = 360;
+const PITCH_COLUMN_WIDTH = 220;
+const CONCERNS_COLUMN_WIDTH = 240;
 
 // ============================================================================
 // Webhook 受信
@@ -70,8 +77,13 @@ function doPost(e) {
       body.priority || '',
       body.title || '',
       body.location || '',
+      body.days_since_posted || '',
       body.price_yen != null ? body.price_yen : '',
       body.estimated_market_price_yen != null ? body.estimated_market_price_yen : '',
+      body.price_gap_ratio || '',
+      body.condition_grade || '',
+      body.sales_pitch_hook || '',
+      body.concerns || '',
       body.url || '',
       body.dm_polite || '',
       '未対応',
@@ -82,11 +94,13 @@ function doPost(e) {
 
     const row = sheet.getLastRow();
     sheet.setRowHeight(row, IMAGE_ROW_HEIGHT);
-    // DM 本文は長いので折り返し表示にする
-    sheet
-      .getRange(row, _colIndex('DM文(丁寧版)'))
-      .setWrap(true)
-      .setVerticalAlignment('top');
+    // 長文セルは折り返し + 上揃え
+    ['引きポイント', '懸念点', 'DM文(丁寧版)'].forEach(function (name) {
+      sheet
+        .getRange(row, _colIndex(name))
+        .setWrap(true)
+        .setVerticalAlignment('top');
+    });
     _applyStatusValidation(sheet, row);
 
     return _json({ ok: true, row: row });
@@ -117,11 +131,16 @@ function setupSheet() {
   // 画像列の幅
   sheet.setColumnWidth(_colIndex('画像'), IMAGE_COLUMN_WIDTH);
 
-  // URL列・タイトル・メモ・DM の幅
+  // 各列の幅
   sheet.setColumnWidth(_colIndex('出品URL'), 320);
   sheet.setColumnWidth(_colIndex('タイトル'), 300);
   sheet.setColumnWidth(_colIndex('メモ'), 280);
   sheet.setColumnWidth(_colIndex('DM文(丁寧版)'), DM_COLUMN_WIDTH);
+  sheet.setColumnWidth(_colIndex('引きポイント'), PITCH_COLUMN_WIDTH);
+  sheet.setColumnWidth(_colIndex('懸念点'), CONCERNS_COLUMN_WIDTH);
+  sheet.setColumnWidth(_colIndex('経過日数'), 90);
+  sheet.setColumnWidth(_colIndex('乖離率'), 80);
+  sheet.setColumnWidth(_colIndex('状態'), 60);
 
   // 対応状況列のドロップダウン（2行目以降全部）
   _applyStatusValidation(sheet, 2, 1000);

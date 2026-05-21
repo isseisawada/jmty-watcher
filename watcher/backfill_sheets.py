@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from datetime import date
 
 from .config import load_config
 from .db import Db
@@ -87,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run or not targets:
         return 0
 
+    today = date.today()
     success = 0
     failures: list[str] = []
     with SheetsNotifier(cfg.sheets_webhook_url, cfg.sheets_webhook_token) as sheets:
@@ -97,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
                 listing=listing,
                 classification=classification,
                 dm_polite=dm_polite,
+                days_since_posted=listing.days_since_posted(today),
             ):
                 success += 1
             else:
