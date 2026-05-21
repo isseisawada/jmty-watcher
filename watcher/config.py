@@ -37,6 +37,7 @@ class Config:
 
     sheets_webhook_url: str | None
     sheets_webhook_token: str | None
+    sheets_view_url: str | None
 
     search_keywords: tuple[str, ...]
     max_details_per_run: int
@@ -62,6 +63,7 @@ def load_config() -> Config:
         slack_channel_id=_get("SLACK_CHANNEL_ID"),
         sheets_webhook_url=_get("SHEETS_WEBHOOK_URL"),
         sheets_webhook_token=_get("SHEETS_WEBHOOK_TOKEN"),
+        sheets_view_url=_get("SHEETS_VIEW_URL"),
         search_keywords=keywords,
         max_details_per_run=int(_get("WATCHER_MAX_DETAILS_PER_RUN", "30")),
         request_delay_seconds=float(_get("WATCHER_REQUEST_DELAY_SECONDS", "2.5")),
