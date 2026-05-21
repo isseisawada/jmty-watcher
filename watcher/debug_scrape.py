@@ -125,13 +125,14 @@ def _run_from_html(args: argparse.Namespace) -> int:
                     category_label=None,
                     thumbnail_url=None,
                 )
-                scraper._parse_detail_html(target, detail_html)
+                scraper.parse_detail(target, detail_html)
                 print(
                     f"- {detail_path.name}: "
                     f"desc={len(target.description_full or '')} chars, "
                     f"images={len(target.image_urls)}, "
                     f"posted={target.posted_date}, "
-                    f"seller_hint={target.seller_type_hint}"
+                    f"seller_hint={target.seller_type_hint}, "
+                    f"post_count={target.seller_post_count}"
                 )
             sample = _find_listing_for_detail(listings, args.detail_html[0]) or listings[0]
             print("\n== サンプル1件の全フィールド ==")
@@ -185,13 +186,14 @@ def _run_live(args: argparse.Namespace) -> int:
                         (out_dir / f"{listing.article_id}.html").write_text(
                             r.text, encoding="utf-8"
                         )
-                    scraper._parse_detail_html(listing, r.text)
+                    scraper.parse_detail(listing, r.text)
                     print(
                         f"- {listing.article_id}: "
                         f"desc={len(listing.description_full or '')} chars, "
                         f"images={len(listing.image_urls)}, "
                         f"posted={listing.posted_date}, "
-                        f"seller_hint={listing.seller_type_hint}"
+                        f"seller_hint={listing.seller_type_hint}, "
+                        f"post_count={listing.seller_post_count}"
                     )
                 except Exception as e:
                     print(f"- {listing.article_id}: ERROR {e}")

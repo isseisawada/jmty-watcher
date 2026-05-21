@@ -1,19 +1,28 @@
 """Jimoty scraper.
 
-Parsing strategy: Jimoty serves SSR HTML, but class names drift. We use a
-best-effort approach — try several selectors, fall back to regex where useful.
-Any field that cannot be parsed returns `None` and the classifier still runs;
-the AI judge copes with partial data.
+実HTML構造の確認結果:
+- **一覧ページ** は SSR HTML。`.p-articles-list-item` 配下に `.p-item-title` /
+  `.p-item-most-important` / `.p-item-secondary-important` / `.p-item-supplementary-info`
+  / `.p-item-detail` / `.p-item-history` 等の安定したクラス名が使われている。
+- **詳細ページ** は React + styled-components で本文部の class 名が
+  ハッシュ化されている (`sc-xxxx-y`)。代わりに `<script id="__NEXT_DATA__">` に
+  全データが構造化JSONで埋め込まれているので、こちらをパースする。
+
+そのため scraper は2系統に分けている:
+- `_parse_listing_html`: HTMLセレクタベース
+- `_parse_detail_from_next_data`: __NEXT_DATA__ JSON ベース（メイン）
+- `_parse_detail_html`: NEXT_DATA が無い場合のHTMLフォールバック（互換用）
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
 import urllib.parse
 from datetime import date, datetime
-from typing import Iterable
+from typing import Any, Iterable
 
 import httpx
 from selectolax.parser import HTMLParser, Node
@@ -28,6 +37,9 @@ ARTICLE_ID_RE = re.compile(r"article-[a-z0-9]+")
 PRICE_RE = re.compile(r"([0-9][0-9,]*)")
 DATE_TEXT_RE = re.compile(r"(\d{4})[/\-年]?(\d{1,2})[/\-月]?(\d{1,2})?")
 JP_SHORT_DATE_RE = re.compile(r"(\d{1,2})月(\d{1,2})日")
+NEXT_DATA_RE = re.compile(
+    r'<script id="__NEXT_DATA__"[^>]*>(.+?)</script>', re.DOTALL
+)
 
 
 class JmtyScraper:
@@ -101,9 +113,19 @@ class JmtyScraper:
     def _parse_listing_html(self, html: str) -> Iterable[Listing]:
         tree = HTMLParser(html)
 
-        # Jimoty listing cards are <li> or <div> that contain an <a href=".../article-xxxx">.
         seen_ids: set[str] = set()
-        for anchor in tree.css("a[href*='/article-']"):
+        # 一覧カードは `<li class="p-articles-list-item">` に1件ずつ収まる。
+        cards = tree.css("li.p-articles-list-item")
+        if not cards:
+            # フォールバック: 旧構造 or 違う一覧ページ形式
+            cards = [self._closest_card(a) for a in tree.css("a[href*='/article-']")]
+
+        for card in cards:
+            if card is None:
+                continue
+            anchor = card.css_first("a[href*='/article-']")
+            if anchor is None:
+                continue
             href = anchor.attributes.get("href", "") or ""
             match = ARTICLE_ID_RE.search(href)
             if not match:
@@ -113,7 +135,6 @@ class JmtyScraper:
                 continue
             seen_ids.add(article_id)
 
-            card = self._closest_card(anchor) or anchor
             url = href if href.startswith("http") else f"{JMTY_BASE}{href}"
 
             yield Listing(
@@ -121,7 +142,7 @@ class JmtyScraper:
                 url=url,
                 title=self._extract_title(card, anchor),
                 price_yen=self._extract_price(card),
-                prefecture=self._extract_prefecture(url),
+                prefecture=self._extract_prefecture_from_card(card, url),
                 city=self._extract_city(card),
                 category_label=self._extract_category(card),
                 thumbnail_url=self._extract_thumb(card),
@@ -149,34 +170,40 @@ class JmtyScraper:
 
     @staticmethod
     def _extract_title(card: Node, anchor: Node) -> str:
-        for sel in ("h2", "h3", ".p-articles-list-item-title", "[class*=title]"):
-            node = card.css_first(sel)
-            if node and node.text(strip=True):
-                return node.text(strip=True)
+        title_div = card.css_first(".p-item-title")
+        if title_div:
+            text = title_div.text(strip=True)
+            if text:
+                return text
+        # フォールバック
         return (anchor.attributes.get("title") or anchor.text(strip=True) or "").strip()
 
     @staticmethod
     def _extract_price(card: Node) -> int | None:
-        for sel in (".p-item-most-important", "[class*=price]", ".p-item-price"):
-            node = card.css_first(sel)
-            if not node:
-                continue
-            text = node.text(strip=True)
-            if not text:
-                continue
-            if "応談" in text or "相談" in text:
+        node = card.css_first(".p-item-most-important")
+        if not node:
+            return None
+        text = node.text(strip=True)
+        if not text:
+            return None
+        if "応談" in text or "相談" in text:
+            return None
+        match = PRICE_RE.search(text.replace(",", ""))
+        if match:
+            try:
+                return int(match.group(1))
+            except ValueError:
                 return None
-            match = PRICE_RE.search(text.replace(",", ""))
-            if match:
-                try:
-                    return int(match.group(1))
-                except ValueError:
-                    continue
         return None
 
     @staticmethod
-    def _extract_prefecture(url: str) -> str | None:
-        # /okinawa/sale-... → 'okinawa'; we'll keep raw slug; classifier handles it.
+    def _extract_prefecture_from_card(card: Node, url: str) -> str | None:
+        node = card.css_first(".p-item-secondary-important")
+        if node:
+            text = node.text(strip=True)
+            if text:
+                return text
+        # フォールバック: URL slug から
         m = re.search(r"jmty\.jp/([^/]+)/", url)
         if not m:
             return None
@@ -185,23 +212,40 @@ class JmtyScraper:
 
     @staticmethod
     def _extract_city(card: Node) -> str | None:
-        for sel in ("[class*=area]", "[class*=location]", ".p-item-area"):
-            node = card.css_first(sel)
-            if node and node.text(strip=True):
-                return node.text(strip=True)
+        """
+        .p-item-supplementary-info 内の最初の `<a>` が city。
+        2番目以降は駅名やカテゴリで混在するので最初の1つだけ取る。
+        """
+        info_blocks = card.css(".p-item-supplementary-info")
+        for info in info_blocks:
+            anchors = info.css("a")
+            for a in anchors:
+                href = a.attributes.get("href", "") or ""
+                # `a-XXXXX-name` パターンが city。`g-XXXX` はジャンル、`s-XXXX` は駅。
+                if re.search(r"/a-\d+-", href):
+                    text = a.text(strip=True)
+                    if text:
+                        return text
         return None
 
     @staticmethod
     def _extract_category(card: Node) -> str | None:
-        for sel in ("[class*=category]", "[class*=genre]"):
-            node = card.css_first(sel)
-            if node and node.text(strip=True):
-                return node.text(strip=True)
+        """
+        .p-item-supplementary-info 内の最後の `<a>` がカテゴリ（`/all/sale-toy` 等）。
+        """
+        for info in card.css(".p-item-supplementary-info"):
+            anchors = info.css("a")
+            for a in anchors:
+                href = a.attributes.get("href", "") or ""
+                if re.search(r"/all/sale-[a-z]+/?$", href):
+                    text = a.text(strip=True)
+                    if text:
+                        return text
         return None
 
     @staticmethod
     def _extract_thumb(card: Node) -> str | None:
-        img = card.css_first("img")
+        img = card.css_first("img.p-item-image") or card.css_first("img")
         if not img:
             return None
         for attr in ("data-src", "data-original", "src"):
@@ -212,23 +256,16 @@ class JmtyScraper:
 
     @staticmethod
     def _extract_snippet(card: Node) -> str | None:
-        for sel in ("[class*=summary]", "[class*=description]", "p"):
-            node = card.css_first(sel)
-            if node:
-                text = node.text(strip=True)
-                if text and len(text) > 15:
-                    return text[:300]
+        node = card.css_first(".p-item-detail")
+        if node:
+            text = node.text(strip=True)
+            if text:
+                return text[:300]
         return None
 
     @staticmethod
     def _extract_favorite_count(card: Node) -> int | None:
-        for sel in ("[class*=favorite]", "[class*=like]"):
-            node = card.css_first(sel)
-            if not node:
-                continue
-            match = re.search(r"\d+", node.text(strip=True))
-            if match:
-                return int(match.group(0))
+        # 一覧カードには通常お気に入り数は出ない。お気に入り数は詳細ページで取得。
         return None
 
     # ------------------------------------------------------------------ detail
@@ -237,7 +274,18 @@ class JmtyScraper:
         logger.info("fetching detail: %s", listing.url)
         resp = self.client.get(listing.url)
         resp.raise_for_status()
-        return self._parse_detail_html(listing, resp.text)
+        return self.parse_detail(listing, resp.text)
+
+    def parse_detail(self, listing: Listing, html: str) -> Listing:
+        """__NEXT_DATA__ を最優先、無ければHTMLフォールバック。"""
+        next_data = _extract_next_data(html)
+        if next_data is not None:
+            return _parse_detail_from_next_data(listing, next_data)
+        logger.warning(
+            "no __NEXT_DATA__ found for %s; falling back to HTML parsing",
+            listing.article_id,
+        )
+        return self._parse_detail_html(listing, html)
 
     def _parse_detail_html(self, listing: Listing, html: str) -> Listing:
         tree = HTMLParser(html)
@@ -318,6 +366,115 @@ class JmtyScraper:
     def _parse_date(tree: HTMLParser, labels: tuple[str, ...]) -> date | None:
         text = tree.body.text() if tree.body else ""
         return _parse_date_in(text, labels)
+
+
+# ===========================================================================
+# 詳細ページ: __NEXT_DATA__ JSON ベース parsing
+# ===========================================================================
+def _extract_next_data(html: str) -> dict[str, Any] | None:
+    """`<script id="__NEXT_DATA__">` の中身を JSON として返す。無ければ None。"""
+    m = NEXT_DATA_RE.search(html)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError as e:
+        logger.warning("__NEXT_DATA__ JSON decode failed: %s", e)
+        return None
+
+
+def _parse_detail_from_next_data(listing: Listing, next_data: dict[str, Any]) -> Listing:
+    """__NEXT_DATA__ の構造化データから Listing を埋める。"""
+    try:
+        page_props = next_data["props"]["pageProps"]
+        results = page_props["articleResults"]
+        article = results["article"]
+    except (KeyError, TypeError) as e:
+        logger.warning("__NEXT_DATA__ structure unexpected (%s); skipping", e)
+        return listing
+
+    if not listing.title:
+        listing.title = article.get("title") or listing.title
+    text = article.get("text") or ""
+    if text:
+        listing.description_full = text[:8000]
+
+    par_items = article.get("par_category_items") or {}
+    price = par_items.get("price")
+    if isinstance(price, (int, float)) and listing.price_yen in (None, 0):
+        listing.price_yen = int(price)
+
+    fav = article.get("favorite_user_count")
+    if isinstance(fav, int):
+        listing.favorite_count = fav
+
+    # categories
+    large_genre = (article.get("large_genre") or {}).get("name")
+    if large_genre and not listing.category_label:
+        listing.category_label = large_genre
+
+    # location: prefecture / city / town を組み立てる
+    locations = article.get("locations") or []
+    if locations:
+        loc = locations[0]
+        pref = (loc.get("prefecture") or {}).get("name")
+        city = (loc.get("city") or {}).get("name_with_suffix") or (loc.get("city") or {}).get("name")
+        town = (loc.get("town") or {}).get("name_with_suffix")
+        if pref:
+            listing.prefecture = pref
+        if city:
+            listing.city = f"{city}{town}" if town else city
+
+    # images
+    images = article.get("images") or []
+    image_urls: list[str] = []
+    for img in images[:5]:
+        url = img.get("large_url") or img.get("medium_url") or img.get("small_url")
+        if url:
+            image_urls.append(url)
+    if image_urls:
+        listing.image_urls = image_urls
+        if not listing.thumbnail_url:
+            listing.thumbnail_url = image_urls[0]
+
+    # dates
+    created = article.get("created_at")
+    updated = article.get("updated_at")
+    if created:
+        listing.posted_date = _parse_iso_date(created) or listing.posted_date
+    if updated:
+        listing.last_updated_date = _parse_iso_date(updated) or listing.last_updated_date
+
+    # business フラグは決定的なので seller_type_hint に直接マップ
+    business = article.get("business")
+    if business is True:
+        listing.seller_type_hint = "business"
+    elif business is False:
+        listing.seller_type_hint = "individual"
+
+    # post_user 情報
+    post_user = results.get("post_user") or {}
+    if post_user:
+        name = post_user.get("name")
+        if name and not listing.seller_name:
+            listing.seller_name = name[:80]
+        count = post_user.get("articles_count")
+        if isinstance(count, int):
+            listing.seller_post_count = count
+        # certification_status.business が True なら強い business シグナル
+        cert = (post_user.get("certification_status") or {}).get("business")
+        if cert is True:
+            listing.seller_type_hint = "business"
+
+    return listing
+
+
+def _parse_iso_date(s: str) -> date | None:
+    try:
+        # "2026-05-17T18:51:34.838+09:00" のような ISO 形式
+        return datetime.fromisoformat(s).date()
+    except (ValueError, TypeError):
+        return None
 
 
 # 詳細ページの「メイン記事領域」を特定するためのセレクタ。

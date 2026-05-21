@@ -9,15 +9,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from selectolax.parser import HTMLParser
+
 from watcher.models import Listing
 from watcher.scraper import (
     JmtyScraper,
     _collect_listing_images,
     _is_useful_image_url,
 )
-from selectolax.parser import HTMLParser
 
 FIXTURES = Path(__file__).parent / "fixtures"
+REAL_HTML_DIR = Path(__file__).resolve().parent.parent / "debug_cache"
 
 
 def _scraper() -> JmtyScraper:
@@ -55,9 +58,9 @@ def test_parse_listing_extracts_fields() -> None:
     assert okinawa.prefecture == "沖縄"
     assert okinawa.city == "うるま市"
     assert okinawa.category_label == "その他"
-    assert okinawa.thumbnail_url and okinawa.thumbnail_url.startswith("https://img.cdn.jmty.jp/")
+    assert okinawa.thumbnail_url and okinawa.thumbnail_url.startswith("https://cdn.jmty.jp/")
     assert okinawa.snippet and "780万" in okinawa.snippet
-    assert okinawa.favorite_count == 42
+    # favorite_count は一覧カードには出ないので詳細から拾う（ここでは None で正しい）
 
 
 def test_parse_listing_handles_zero_yen() -> None:
@@ -73,11 +76,26 @@ def test_parse_listing_handles_zero_yen() -> None:
 def test_parse_listing_dedupes_article_ids() -> None:
     # 同じカードが二度出るHTML
     html = """
-    <html><body>
-      <a href="/x/sale-oth/article-aaaa"><h2>A</h2></a>
-      <a href="/x/sale-oth/article-aaaa"><h2>A</h2></a>
-      <a href="/x/sale-oth/article-bbbb"><h2>B</h2></a>
-    </body></html>
+    <html><body><ul>
+      <li class="p-articles-list-item">
+        <a class="p-item-image-link" href="/x/sale-oth/article-aaaa">
+          <img class="p-item-image" src="https://cdn.jmty.jp/articles/images/x/thumb_m.jpg">
+        </a>
+        <div class="p-item-title"><a href="/x/sale-oth/article-aaaa">A</a></div>
+      </li>
+      <li class="p-articles-list-item">
+        <a class="p-item-image-link" href="/x/sale-oth/article-aaaa">
+          <img class="p-item-image" src="https://cdn.jmty.jp/articles/images/x/thumb_m.jpg">
+        </a>
+        <div class="p-item-title"><a href="/x/sale-oth/article-aaaa">A</a></div>
+      </li>
+      <li class="p-articles-list-item">
+        <a class="p-item-image-link" href="/x/sale-oth/article-bbbb">
+          <img class="p-item-image" src="https://cdn.jmty.jp/articles/images/y/thumb_m.jpg">
+        </a>
+        <div class="p-item-title"><a href="/x/sale-oth/article-bbbb">B</a></div>
+      </li>
+    </ul></body></html>
     """
     s = _scraper()
     try:
@@ -215,3 +233,91 @@ def test_collect_listing_images_respects_limit() -> None:
         "https://img.cdn.jmty.jp/image/a.jpg",
         "https://img.cdn.jmty.jp/image/b.jpg",
     ]
+
+
+# ===========================================================================
+# 実HTMLでの回帰テスト（debug_cache/ にコミット済みのサンプル）
+# ===========================================================================
+
+
+def _real_html_available() -> bool:
+    return (REAL_HTML_DIR / "listing.html").exists()
+
+
+@pytest.mark.skipif(not _real_html_available(), reason="debug_cache/ が存在しない")
+def test_real_listing_html_extracts_30_listings() -> None:
+    html = (REAL_HTML_DIR / "listing.html").read_text(encoding="utf-8")
+    s = _scraper()
+    try:
+        listings = list(s._parse_listing_html(html))
+    finally:
+        s.close()
+    assert len(listings) >= 25, f"30件取れるべきところ {len(listings)}件"
+
+    # 全件 title / prefecture / thumbnail が埋まっていること
+    miss_title = sum(1 for l in listings if not l.title)
+    miss_pref = sum(1 for l in listings if not l.prefecture)
+    miss_city = sum(1 for l in listings if not l.city)
+    miss_thumb = sum(1 for l in listings if not l.thumbnail_url)
+    miss_snippet = sum(1 for l in listings if not l.snippet)
+    total = len(listings)
+
+    assert miss_title == 0, f"title欠損 {miss_title}/{total}"
+    assert miss_pref == 0, f"prefecture欠損 {miss_pref}/{total}"
+    assert miss_city / total <= 0.1, f"city欠損率 {miss_city}/{total}"
+    assert miss_thumb == 0, f"thumbnail欠損 {miss_thumb}/{total}"
+    assert miss_snippet / total <= 0.1, f"snippet欠損率 {miss_snippet}/{total}"
+
+
+@pytest.mark.skipif(not _real_html_available(), reason="debug_cache/ が存在しない")
+def test_real_detail_html_extracts_full_data() -> None:
+    detail_html = (REAL_HTML_DIR / "article-1oh88t.html").read_text(encoding="utf-8")
+    target = Listing(
+        article_id="article-1oh88t",
+        url="",
+        title="",
+        price_yen=None,
+        prefecture=None,
+        city=None,
+        category_label=None,
+        thumbnail_url=None,
+    )
+    s = _scraper()
+    try:
+        s.parse_detail(target, detail_html)
+    finally:
+        s.close()
+
+    # __NEXT_DATA__ から取れた本物のデータ
+    assert target.title and "レゴ" in target.title
+    assert target.description_full and len(target.description_full) > 100
+    assert target.image_urls and len(target.image_urls) >= 3
+    assert target.posted_date is not None
+    assert target.seller_type_hint == "individual"
+    assert target.seller_name == "みどり"
+    assert target.seller_post_count == 56
+    assert target.price_yen == 1800
+    assert target.prefecture == "沖縄"
+
+
+@pytest.mark.skipif(not _real_html_available(), reason="debug_cache/ が存在しない")
+def test_real_detail_business_flag() -> None:
+    """business=True の出品は seller_type_hint='business' になる。"""
+    detail_html = (REAL_HTML_DIR / "article-p400e.html").read_text(encoding="utf-8")
+    target = Listing(
+        article_id="article-p400e",
+        url="",
+        title="",
+        price_yen=None,
+        prefecture=None,
+        city=None,
+        category_label=None,
+        thumbnail_url=None,
+    )
+    s = _scraper()
+    try:
+        s.parse_detail(target, detail_html)
+    finally:
+        s.close()
+    assert target.seller_type_hint == "business"
+    assert target.seller_post_count is not None and target.seller_post_count >= 1
