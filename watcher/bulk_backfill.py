@@ -94,7 +94,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--max-classify",
         type=int,
         default=None,
-        help="安全弁: 詳細 fetch + 分類する最大件数（未指定なら全件）",
+        help=(
+            "open listing をこの件数だけ処理したら停止する。受付終了済み"
+            "(inquiry_closed) はカウントせず、次に進む。未指定なら全件"
+        ),
     )
     p.add_argument(
         "--dry-run",
@@ -169,27 +172,27 @@ def main(argv: list[str] | None = None) -> int:
             logger.info("safety: limited to %d listings", len(new_listings))
 
         if args.dry_run:
-            logger.info("[dry-run] would process %d new listings", len(new_listings))
-            for lst in new_listings[:30]:
+            logger.info("[dry-run] would process up to %d new listings", len(new_listings))
+            preview = (
+                new_listings[: args.max_classify]
+                if args.max_classify is not None
+                else new_listings[:30]
+            )
+            for lst in preview:
                 logger.info(
                     "  - %s: %s", lst.article_id, (lst.title or "")[:60]
                 )
-            if len(new_listings) > 30:
-                logger.info("  ... and %d more", len(new_listings) - 30)
+            if len(new_listings) > len(preview):
+                logger.info("  ... and %d more", len(new_listings) - len(preview))
+            logger.info(
+                "  ※ 受付終了済み (inquiry_closed) は詳細fetch時に検出してスキップ。"
+                " --max-classify は『open listing の処理数の上限』として扱う"
+            )
             return 0
 
         if not new_listings:
             logger.info("nothing to do")
             return 0
-
-        logger.info("fetching details for %d listings ...", len(new_listings))
-        for i, lst in enumerate(new_listings, 1):
-            try:
-                scraper.fetch_detail(lst)
-            except Exception as e:
-                logger.exception("detail fetch failed for %s: %s", lst.article_id, e)
-            if i % 10 == 0 or i == len(new_listings):
-                logger.info("  detail fetch progress: %d/%d", i, len(new_listings))
 
         classifier = Classifier(cfg.anthropic_api_key, cfg.classifier_model)
         dm_generator = DmGenerator(
@@ -206,8 +209,28 @@ def main(argv: list[str] | None = None) -> int:
         if cfg.sheets_webhook_url:
             sheets = SheetsNotifier(cfg.sheets_webhook_url, cfg.sheets_webhook_token)
 
+        target_open = args.max_classify  # None = 無制限
+        attempted = 0
+        open_processed = 0
+        closed_skipped = 0
+        pipeline_errors = 0
         try:
-            for i, lst in enumerate(new_listings, 1):
+            for lst in new_listings:
+                if target_open is not None and open_processed >= target_open:
+                    logger.info(
+                        "reached target of %d open listings → stop", target_open
+                    )
+                    break
+
+                try:
+                    scraper.fetch_detail(lst)
+                except Exception as e:  # noqa: BLE001
+                    logger.exception(
+                        "detail fetch failed for %s: %s", lst.article_id, e
+                    )
+                    attempted += 1
+                    continue
+
                 try:
                     process_listing(
                         listing=lst,
@@ -219,17 +242,37 @@ def main(argv: list[str] | None = None) -> int:
                         today=today,
                         dry_run=False,
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.exception(
                         "pipeline failed for %s: %s", lst.article_id, e
                     )
-                if i % 10 == 0 or i == len(new_listings):
-                    logger.info("  pipeline progress: %d/%d", i, len(new_listings))
+                    pipeline_errors += 1
+
+                attempted += 1
+                if lst.inquiry_closed:
+                    closed_skipped += 1
+                else:
+                    open_processed += 1
+
+                if attempted % 5 == 0:
+                    logger.info(
+                        "  progress: attempted=%d open=%d closed=%d errors=%d",
+                        attempted,
+                        open_processed,
+                        closed_skipped,
+                        pipeline_errors,
+                    )
         finally:
             if sheets is not None:
                 sheets.close()
 
-    logger.info("done: processed %d listings", len(new_listings))
+    logger.info(
+        "done: attempted=%d, open processed=%d, closed skipped=%d, errors=%d",
+        attempted,
+        open_processed,
+        closed_skipped,
+        pipeline_errors,
+    )
     return 0
 
 
