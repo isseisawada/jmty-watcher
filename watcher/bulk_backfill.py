@@ -167,9 +167,9 @@ def main(argv: list[str] | None = None) -> int:
         for kw, lst in listings_by_kw.items():
             logger.info("  - %s: %d (pre-dedupe)", kw, len(lst))
 
-        if args.max_classify is not None:
-            new_listings = new_listings[: args.max_classify]
-            logger.info("safety: limited to %d listings", len(new_listings))
+        # --max-classify はランタイムループの停止条件として使う（open 件数到達で break）。
+        # 旧版でここで slice していたが、closed が混じると目標 N に届く前に
+        # new_listings が尽きてしまうため廃止。
 
         if args.dry_run:
             logger.info("[dry-run] would process up to %d new listings", len(new_listings))
