@@ -205,8 +205,8 @@ uv run python scripts/preview_slack.py --out preview.json
 
 ## 8. cron稼働
 
-GitHub Actions の `.github/workflows/watcher.yml` は `cron: '0 * * * *'` (毎時0分) で自動稼働中。
-- 過剰な場合: cron 表現を `0 */3 * * *` 等に変更
+GitHub Actions の `.github/workflows/watcher.yml` は `cron: '0 22 * * *'` (UTC 22:00 = JST 07:00、毎日1回) で自動稼働中。
+- 頻度を上げたい場合: cron 表現を `0 */6 * * *` 等に変更
 - 一旦停止する場合: Actions タブの該当workflow → **Disable workflow**
 
 ---
