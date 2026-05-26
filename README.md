@@ -5,7 +5,7 @@
 ## 構成
 
 ```
-GitHub Actions (cron毎時)
+GitHub Actions (cron毎日 07:00 JST)
  ├─ watcher/scraper.py      ジモティ一覧＋詳細ページ取得
  ├─ watcher/classifier.py   Claude Sonnet 4.6で妙味判定（S/A/B/C）
  ├─ watcher/dm_generator.py 優先度S/AのDM文（丁寧版/フランク版）生成
@@ -122,7 +122,7 @@ Environment Variables に `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SUPABASE
 ```
 .
 ├── .github/workflows/
-│   ├── watcher.yml                 # 毎時cron
+│   ├── watcher.yml                 # 毎日 07:00 JST cron
 │   └── ci.yml                      # push毎にruff+pytest+SQL検証
 ├── handler/
 │   ├── api/slack_interactive.py    # Vercel Serverless
