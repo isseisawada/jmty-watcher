@@ -53,18 +53,18 @@ def _mocks(*, classification: Classification | None = None) -> dict[str, Any]:
     }
 
 
-def test_inquiry_closed_listing_is_upserted_but_not_classified() -> None:
+def test_inquiry_closed_listing_returns_none_and_skips_pipeline() -> None:
     listing = _make_listing(inquiry_closed=True)
     m = _mocks()
-    process_listing(
+    result = process_listing(
         listing=listing,
         today=date(2026, 5, 21),
         dry_run=False,
         **m,
     )
-    # DB には残す
+    # 受付終了は None を返してパイプラインをスキップ
+    assert result is None
     m["db"].upsert_listing.assert_called_once()
-    # Claude も DM も通知も触らない
     m["classifier"].classify.assert_not_called()
     m["dm_generator"].generate.assert_not_called()
     m["notifier"].post_listing.assert_not_called()
@@ -72,18 +72,57 @@ def test_inquiry_closed_listing_is_upserted_but_not_classified() -> None:
     m["db"].insert_classification.assert_not_called()
 
 
-def test_open_listing_runs_full_pipeline() -> None:
+def test_open_listing_priority_s_runs_full_pipeline_and_returns_classification() -> None:
     listing = _make_listing(inquiry_closed=False)
     m = _mocks()
-    process_listing(
+    result = process_listing(
         listing=listing,
         today=date(2026, 5, 21),
         dry_run=False,
         **m,
     )
+    # Classification がそのまま返る（priority=S）
+    assert result is not None
+    assert result.priority == "S"
+
     m["db"].upsert_listing.assert_called_once()
     m["classifier"].classify.assert_called_once()
-    # priority=S なので DM 生成と通知も走る
     m["dm_generator"].generate.assert_called_once()
     m["notifier"].post_listing.assert_called_once()
     m["sheets"].append_listing.assert_called_once()
+
+
+def test_open_listing_priority_c_returns_classification_but_no_notify() -> None:
+    """priority=C (非トレーラーハウス) は通知対象外 → Slack/Sheets 呼ばれない。
+
+    bulk_backfill 側で priority を見て『Sheets 追加件数』としてカウントしない
+    判断をするため、Classification は必ず返す。
+    """
+    listing = _make_listing(inquiry_closed=False)
+    c_listing = Classification(
+        is_actual_trailer_house=False,
+        seller_type="individual",
+        trailer_category="unknown",
+        estimated_market_price_yen=None,
+        price_gap_ratio=None,
+        condition_grade="C",
+        priority="C",
+        concerns=[],
+        sales_pitch_hook="",
+        model_version="x",
+    )
+    m = _mocks(classification=c_listing)
+    result = process_listing(
+        listing=listing,
+        today=date(2026, 5, 21),
+        dry_run=False,
+        **m,
+    )
+    assert result is not None
+    assert result.priority == "C"
+
+    m["classifier"].classify.assert_called_once()
+    m["db"].insert_classification.assert_called_once()
+    # NOTIFY_PRIORITIES = {S,A,B} に含まれないので通知系は呼ばれない
+    m["notifier"].post_listing.assert_not_called()
+    m["sheets"].append_listing.assert_not_called()
