@@ -21,7 +21,7 @@ from .classifier import Classifier
 from .config import Config, load_config
 from .db import Db
 from .dm_generator import DmGenerator
-from .models import Listing
+from .models import Classification, Listing
 from .scraper import JmtyScraper
 from .sheets_notifier import SheetsNotifier
 from .slack_notifier import SlackNotifier
@@ -133,7 +133,14 @@ def process_listing(
     sheets: SheetsNotifier | None,
     today: date,
     dry_run: bool,
-) -> None:
+) -> Classification | None:
+    """1件分のパイプライン。
+
+    戻り値:
+        - 受付終了 (inquiry_closed) でスキップ → None
+        - 分類まで実行できた場合 → Classification（priority 等を含む）
+          通知対象 (S/A/B) かどうかは呼び出し側で classification.priority を見て判断
+    """
     listing_id = db.upsert_listing(listing)
     logger.info("upserted listing_id=%s article=%s", listing_id, listing.article_id)
 
@@ -143,7 +150,7 @@ def process_listing(
         logger.info(
             "inquiry closed for %s; skipping classify/notify", listing.article_id
         )
-        return
+        return None
 
     classification = classifier.classify(listing, today=today)
     db.insert_classification(listing_id, classification)
@@ -166,7 +173,7 @@ def process_listing(
     if classification.priority in NOTIFY_PRIORITIES:
         if dry_run:
             logger.info("[dry-run] would notify Slack/Sheets for %s", listing.article_id)
-            return
+            return classification
         if notifier is not None:
             ts = notifier.post_listing(
                 listing_id=listing_id,
@@ -187,6 +194,8 @@ def process_listing(
                 dm_polite=dm_polite,
                 days_since_posted=listing.days_since_posted(today),
             )
+
+    return classification
 
 
 def main() -> int:

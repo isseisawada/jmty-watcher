@@ -22,7 +22,7 @@ from .classifier import Classifier
 from .config import load_config
 from .db import Db
 from .dm_generator import DmGenerator
-from .main import configure_logging, process_listing
+from .main import NOTIFY_PRIORITIES, configure_logging, process_listing
 from .models import Listing
 from .scraper import JmtyScraper
 from .sheets_notifier import SheetsNotifier
@@ -95,8 +95,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         help=(
-            "open listing をこの件数だけ処理したら停止する。受付終了済み"
-            "(inquiry_closed) はカウントせず、次に進む。未指定なら全件"
+            "Sheets / Slack に追加された件数の上限。受付終了 (closed) や "
+            "priority C (非トレーラーハウス) はカウントせず次に進む。"
+            "未指定なら全件走査"
         ),
     )
     p.add_argument(
@@ -209,16 +210,18 @@ def main(argv: list[str] | None = None) -> int:
         if cfg.sheets_webhook_url:
             sheets = SheetsNotifier(cfg.sheets_webhook_url, cfg.sheets_webhook_token)
 
-        target_open = args.max_classify  # None = 無制限
+        target_added = args.max_classify  # None = 無制限。Sheets/Slack 追加件数で換算
         attempted = 0
-        open_processed = 0
+        added_to_sheets = 0  # priority∈{S,A,B} で実際に通知対象になった件数
+        non_trailer = 0  # priority=C 等で通知対象外 (DB には残る)
         closed_skipped = 0
         pipeline_errors = 0
         try:
             for lst in new_listings:
-                if target_open is not None and open_processed >= target_open:
+                if target_added is not None and added_to_sheets >= target_added:
                     logger.info(
-                        "reached target of %d open listings → stop", target_open
+                        "reached target of %d Sheets-added listings → stop",
+                        target_added,
                     )
                     break
 
@@ -232,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
                     continue
 
                 try:
-                    process_listing(
+                    classification = process_listing(
                         listing=lst,
                         db=db,
                         classifier=classifier,
@@ -247,18 +250,26 @@ def main(argv: list[str] | None = None) -> int:
                         "pipeline failed for %s: %s", lst.article_id, e
                     )
                     pipeline_errors += 1
+                    classification = None
 
                 attempted += 1
                 if lst.inquiry_closed:
                     closed_skipped += 1
+                elif classification is None:
+                    # pipeline_errors のいずれかでカウント済み
+                    pass
+                elif classification.priority in NOTIFY_PRIORITIES:
+                    added_to_sheets += 1
                 else:
-                    open_processed += 1
+                    non_trailer += 1
 
                 if attempted % 5 == 0:
                     logger.info(
-                        "  progress: attempted=%d open=%d closed=%d errors=%d",
+                        "  progress: attempted=%d added=%d non_trailer=%d "
+                        "closed=%d errors=%d",
                         attempted,
-                        open_processed,
+                        added_to_sheets,
+                        non_trailer,
                         closed_skipped,
                         pipeline_errors,
                     )
@@ -267,9 +278,11 @@ def main(argv: list[str] | None = None) -> int:
                 sheets.close()
 
     logger.info(
-        "done: attempted=%d, open processed=%d, closed skipped=%d, errors=%d",
+        "done: attempted=%d, added to Sheets=%d, non-trailer (priority C)=%d, "
+        "closed skipped=%d, errors=%d",
         attempted,
-        open_processed,
+        added_to_sheets,
+        non_trailer,
         closed_skipped,
         pipeline_errors,
     )
